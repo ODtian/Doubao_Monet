@@ -28,9 +28,9 @@ final class MonetSkin {
         }
     }
 
-    static Result build(Context context, AssetManager source, HookConfig.Snapshot config) throws Exception {
+    static Result build(Context context, AssetManager source, HookConfig.Values config) throws Exception {
         Palette p = Palette.read(context.getResources());
-        String key = "v5_" + p.key() + "_" + config.key();
+        String key = "v6_" + p.key() + "_" + config.key();
         File dir = new File(context.getCodeCacheDir(), "doubao_monet");
         if (!dir.exists() && !dir.mkdirs() && !dir.isDirectory()) {
             throw new IllegalStateException("Cannot create " + dir);
@@ -56,8 +56,15 @@ final class MonetSkin {
     }
 
     static int keyboardSurface(Context context) {
+        return keyboardSurface(context, HookConfig.current());
+    }
+
+    static int keyboardSurface(Context context, HookConfig.Values config) {
         Palette p = Palette.read(context.getResources());
-        return isNight(context.getResources()) ? p.surfaceContainerDark : p.surfaceContainer;
+        if (isNight(context.getResources())) {
+            return mix(p.surfaceContainerDark, p.primaryDark, config.backgroundTint / 100f);
+        }
+        return mix(p.surfaceContainer, p.primary, config.backgroundTint / 100f);
     }
 
     static int navigationSurface(Context context) {
@@ -79,35 +86,51 @@ final class MonetSkin {
     }
 
     static int candidateBackground(Context context) {
+        return candidateBackground(context, HookConfig.current());
+    }
+
+    static int candidateBackground(Context context, HookConfig.Values config) {
         Palette p = Palette.read(context.getResources());
         if (isNight(context.getResources())) {
-            return mix(p.surfaceContainerDark, p.primaryDark, 0.08f);
+            return mix(p.surfaceHighDark, p.primaryDark, config.candidateTint / 100f);
         }
-        return mix(p.surfaceContainer, p.primary, 0.055f);
+        return mix(p.surfaceLow, p.primary, config.candidateTint / 100f);
     }
 
     static int functionKeySurface(Context context) {
-        Palette p = Palette.read(context.getResources());
-        if (isNight(context.getResources())) {
-            return mix(p.surfaceContainerDark, p.primaryDark, 0.10f);
-        }
-        return mix(p.surfaceContainer, p.primary, 0.10f);
+        return functionKeySurface(context, HookConfig.current());
     }
 
-    static int letterKeySurface(Context context, boolean stronger) {
+    static int functionKeySurface(Context context, HookConfig.Values config) {
         Palette p = Palette.read(context.getResources());
         if (isNight(context.getResources())) {
-            return mix(p.surfaceHighestDark, p.primaryDark, stronger ? 0.10f : 0.045f);
+            return mix(p.surfaceHighestDark, p.primaryDark, config.functionTint / 100f);
         }
-        return mix(p.surfaceLowest, p.primary, stronger ? 0.10f : 0.04f);
+        return mix(p.surfaceHigh, p.primary, config.functionTint / 100f);
+    }
+
+    static int letterKeySurface(Context context) {
+        return letterKeySurface(context, HookConfig.current());
+    }
+
+    static int letterKeySurface(Context context, HookConfig.Values config) {
+        Palette p = Palette.read(context.getResources());
+        if (isNight(context.getResources())) {
+            return mix(p.surfaceHighDark, p.primaryDark, config.letterTint / 100f);
+        }
+        return mix(p.surfaceLow, p.primary, config.letterTint / 100f);
     }
 
     static int functionKeyPressedSurface(Context context) {
+        return functionKeyPressedSurface(context, HookConfig.current());
+    }
+
+    static int functionKeyPressedSurface(Context context, HookConfig.Values config) {
         Palette p = Palette.read(context.getResources());
         if (isNight(context.getResources())) {
-            return mix(p.surfaceContainerDark, p.primaryDark, 0.18f);
+            return mix(p.surfaceHighestDark, p.primaryDark, config.pressedTint / 100f);
         }
-        return mix(p.surfaceContainer, p.primary, 0.18f);
+        return mix(p.surfaceHigh, p.primary, config.pressedTint / 100f);
     }
 
     private static int mix(int base, int tint, float amount) {
@@ -129,151 +152,86 @@ final class MonetSkin {
                 == Configuration.UI_MODE_NIGHT_YES;
     }
 
-    private static Map<String, Integer> lightMap(Palette p, HookConfig.Snapshot config) {
+    private static Map<String, Integer> lightMap(Palette p, HookConfig.Values config) {
         Map<String, Integer> m = new LinkedHashMap<>();
+        int body = mix(p.surfaceContainer, p.primary, config.backgroundTint / 100f);
+        int letterKey = mix(p.surfaceLow, p.primary, config.letterTint / 100f);
+        int functionKey = mix(p.surfaceHigh, p.primary, config.functionTint / 100f);
+        int candidate = mix(p.surfaceLow, p.primary, config.candidateTint / 100f);
+        int pressed = mix(p.surfaceHigh, p.primary, config.pressedTint / 100f);
 
         put(m, p.primary,
-                "theme_color",
-                "highlight_color",
-                "keyboard_current_english",
-                "setting_button_icon_selected",
-                "symbol_option_selectedtext",
-                "trans_cursor");
+                "theme_color", "highlight_color", "keyboard_current_english",
+                "setting_button_icon_selected", "symbol_option_selectedtext", "trans_cursor");
 
-        // Candidate text must remain high contrast. Accent is expressed through selection state,
-        // not by tinting all candidate glyphs.
         put(m, p.onSurface,
-                "first_cand_text_color",
-                "canditem_text",
-                "keybutton_text",
-                "title_text");
+                "first_cand_text_color", "canditem_text", "keybutton_text", "title_text");
         put(m, p.onSurfaceVariant,
-                "first_cand_pinyin_text_color",
-                "canditem_pinyin_text",
-                "keybutton_text_2",
-                "keybutton_text_3",
-                "toolbar_idle_button_text",
-                "symbol_option_text");
+                "first_cand_pinyin_text_color", "canditem_pinyin_text", "keybutton_text_2",
+                "keybutton_text_3", "toolbar_idle_button_text", "symbol_option_text");
 
-        put(m, p.surfaceContainer,
-                "default_bk",
-                "toolbar_idle_button_bk",
-                "morecands_list_bk",
-                "trans_container_bk");
-        put(m, p.surfaceHigh,
-                "morecands_filter_container_bk",
-                "setting_button_bk",
-                "morecands_button_bk");
-        int letterKey = mix(p.surfaceLowest, p.primary, config.tintedLetterKeys ? 0.10f : 0.04f);
-        put(m, letterKey,
-                "keybutton_bk",
-                "keybutton_back");
-
-        int functionKey = mix(p.surfaceContainer, p.primary, 0.10f);
-        int functionKeyPressed = mix(p.surfaceContainer, p.primary, 0.18f);
+        put(m, body,
+                "default_bk", "toolbar_idle_button_bk", "morecands_list_bk", "trans_container_bk");
+        put(m, candidate,
+                "morecands_filter_container_bk", "setting_button_bk", "morecands_button_bk",
+                "canditem_selectedbk");
+        put(m, letterKey, "keybutton_bk", "keybutton_back");
         put(m, functionKey,
-                "keybutton_func_bk",
-                "toolbar_idle_button_pushedbk",
-                "setting_button_pushedbk",
-                "symbol_option_pushedbk");
-        put(m, p.surfaceHigh,
-                "keybutton_pushed_bk",
-                "canditem_pushedbk");
-        put(m, functionKeyPressed,
-                "keybutton_func_pushed_bk",
+                "keybutton_func_bk", "toolbar_idle_button_pushedbk",
+                "setting_button_pushedbk", "symbol_option_pushedbk");
+        put(m, pressed,
+                "keybutton_pushed_bk", "canditem_pushedbk", "keybutton_func_pushed_bk",
                 "action_button_pushedbk");
-        m.put("canditem_selectedbk", config.highlightFirstCandidate
-                ? mix(p.surfaceContainer, p.primary, 0.08f)
-                : p.surfaceHigh);
 
         put(m, p.outlineVariant,
-                "canditem_split",
-                "morecands_list_border",
-                "trans_container_border");
-
+                "canditem_split", "morecands_list_border", "trans_container_border");
         put(m, p.onPrimary, "action_button_text");
         put(m, p.onPrimaryContainer, "action_button_pushedtext");
-        put(m, p.surfaceHigh,
-                "trans_action_button_bk",
-                "trans_action_button_pushedbk");
-
+        put(m, candidate, "trans_action_button_bk");
+        put(m, pressed, "trans_action_button_pushedbk");
         put(m, Color.TRANSPARENT,
-                "keybutton_func_border",
-                "keybutton_white_shadow",
-                "keybutton_gray_shadow");
+                "keybutton_func_border", "keybutton_white_shadow", "keybutton_gray_shadow");
         return m;
     }
 
-    private static Map<String, Integer> darkMap(Palette p, HookConfig.Snapshot config) {
+    private static Map<String, Integer> darkMap(Palette p, HookConfig.Values config) {
         Map<String, Integer> m = new LinkedHashMap<>();
+        int body = mix(p.surfaceContainerDark, p.primaryDark, config.backgroundTint / 100f);
+        int letterKey = mix(p.surfaceHighDark, p.primaryDark, config.letterTint / 100f);
+        int functionKey = mix(p.surfaceHighestDark, p.primaryDark, config.functionTint / 100f);
+        int candidate = mix(p.surfaceHighDark, p.primaryDark, config.candidateTint / 100f);
+        int pressed = mix(p.surfaceHighestDark, p.primaryDark, config.pressedTint / 100f);
 
         put(m, p.primaryDark,
-                "theme_color",
-                "highlight_color",
-                "keyboard_current_english",
-                "setting_button_icon_selected",
-                "symbol_option_selectedtext",
-                "trans_cursor");
-
+                "theme_color", "highlight_color", "keyboard_current_english",
+                "setting_button_icon_selected", "symbol_option_selectedtext", "trans_cursor");
         put(m, p.onSurfaceDark,
-                "first_cand_text_color",
-                "canditem_text",
-                "keybutton_text",
-                "title_text");
+                "first_cand_text_color", "canditem_text", "keybutton_text", "title_text");
         put(m, p.onSurfaceVariantDark,
-                "first_cand_pinyin_text_color",
-                "canditem_pinyin_text",
-                "keybutton_text_2",
-                "keybutton_text_3",
-                "toolbar_idle_button_text",
-                "symbol_option_text");
+                "first_cand_pinyin_text_color", "canditem_pinyin_text", "keybutton_text_2",
+                "keybutton_text_3", "toolbar_idle_button_text", "symbol_option_text");
 
-        put(m, p.surfaceContainerDark,
-                "default_bk",
-                "toolbar_idle_button_bk",
-                "morecands_list_bk",
-                "trans_container_bk");
-        put(m, p.surfaceHighDark,
-                "morecands_filter_container_bk",
-                "setting_button_bk",
-                "morecands_button_bk");
-        int letterKey = mix(p.surfaceHighestDark, p.primaryDark, config.tintedLetterKeys ? 0.10f : 0.045f);
-        put(m, letterKey,
-                "keybutton_bk",
-                "keybutton_back");
-
-        int functionKey = mix(p.surfaceContainerDark, p.primaryDark, 0.10f);
-        int functionKeyPressed = mix(p.surfaceContainerDark, p.primaryDark, 0.18f);
+        put(m, body,
+                "default_bk", "toolbar_idle_button_bk", "morecands_list_bk", "trans_container_bk");
+        put(m, candidate,
+                "morecands_filter_container_bk", "setting_button_bk", "morecands_button_bk",
+                "canditem_selectedbk");
+        put(m, letterKey, "keybutton_bk", "keybutton_back");
         put(m, functionKey,
-                "keybutton_func_bk",
-                "toolbar_idle_button_pushedbk",
-                "setting_button_pushedbk",
-                "symbol_option_pushedbk");
-        put(m, p.surfaceHighDark,
-                "keybutton_pushed_bk",
-                "canditem_pushedbk");
-        put(m, functionKeyPressed,
-                "keybutton_func_pushed_bk",
+                "keybutton_func_bk", "toolbar_idle_button_pushedbk",
+                "setting_button_pushedbk", "symbol_option_pushedbk");
+        put(m, pressed,
+                "keybutton_pushed_bk", "canditem_pushedbk", "keybutton_func_pushed_bk",
                 "action_button_pushedbk");
-        m.put("canditem_selectedbk", config.highlightFirstCandidate
-                ? mix(p.surfaceContainerDark, p.primaryDark, 0.10f)
-                : p.surfaceHighDark);
 
         put(m, p.outlineVariantDark,
-                "canditem_split",
-                "morecands_list_border",
-                "trans_container_border");
-
+                "canditem_split", "morecands_list_border", "trans_container_border");
         put(m, p.onPrimaryDark, "action_button_text");
         put(m, p.onPrimaryContainerDark, "action_button_pushedtext");
-        put(m, p.surfaceHighDark,
-                "trans_action_button_bk",
-                "trans_action_button_pushedbk");
-
+        put(m, candidate, "trans_action_button_bk");
+        put(m, pressed, "trans_action_button_pushedbk");
         put(m, Color.TRANSPARENT,
-                "keybutton_func_border",
-                "keybutton_white_shadow",
-                "keybutton_gray_shadow");
+                "keybutton_func_border", "keybutton_white_shadow", "keybutton_gray_shadow");
         return m;
     }
 

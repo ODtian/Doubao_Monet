@@ -5,6 +5,8 @@ import android.content.res.AssetManager;
 import android.content.res.Resources;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.ColorDrawable;
+import android.view.ViewGroup;
 import android.os.Build;
 import android.util.Log;
 import android.view.View;
@@ -81,22 +83,92 @@ public final class MainHook implements IXposedHookLoadPackage {
     }
 
     private static Drawable overrideDrawable(Resources resources, int id, Context context) {
-        HookConfig.Snapshot config = HookConfig.current();
+        HookConfig.Values config = HookConfig.current();
         if (!config.enabled) return null;
         try {
             String entry = resources.getResourceEntryName(id);
             if ("bg_candidate_item_highlighted".equals(entry)) {
-                return roundedDrawable(context, MonetSkin.candidateBackground(context), 6f);
+                return roundedDrawable(context, MonetSkin.candidateBackground(context, config), 6f);
             }
             if ("bg_candidate_item_pressed".equals(entry)) {
-                return roundedDrawable(context, MonetSkin.functionKeyPressedSurface(context), 6f);
+                return roundedDrawable(context, MonetSkin.functionKeyPressedSurface(context, config), 6f);
             }
             if ("bg_more_candidate_segment_selected".equals(entry)) {
-                return roundedDrawable(context, MonetSkin.candidateBackground(context), 24f);
+                return roundedDrawable(context, MonetSkin.candidateBackground(context, config), 24f);
+            }
+            if (config.syncExtendedPanels && "bg_more_candidate_panel".equals(entry)) {
+                return roundedDrawable(context, MonetSkin.keyboardSurface(context, config), 0f);
             }
         } catch (Throwable ignored) {
         }
         return null;
+    }
+
+    private static boolean isKnownDoubaoGray(int color) {
+        return color == 0xffe0e2e6
+                || color == 0xffebebeb
+                || color == 0xffeeeeee
+                || color == 0xffededed
+                || color == 0xfff3f3f4
+                || color == 0xfff8f8f8;
+    }
+
+    private static void recolorKnownGrayTree(View root, HookConfig.Values config) {
+        if (root == null || !config.enabled || !config.syncExtendedPanels) return;
+        try {
+            Drawable background = root.getBackground();
+            if (background instanceof ColorDrawable) {
+                int old = ((ColorDrawable) background).getColor();
+                if (isKnownDoubaoGray(old)) {
+                    root.setBackgroundColor(MonetSkin.keyboardSurface(root.getContext(), config));
+                }
+            }
+            if (root instanceof ViewGroup) {
+                ViewGroup group = (ViewGroup) root;
+                for (int i = 0; i < group.getChildCount(); i++) {
+                    recolorKnownGrayTree(group.getChildAt(i), config);
+                }
+            }
+        } catch (Throwable t) {
+            error("gray tree recolor failed", t);
+        }
+    }
+
+    private static void installExtendedPanelViewHooks(ClassLoader cl) {
+        try {
+            Class<?> toolbox = Class.forName(
+                    "com.bytedance.common_biz.tool_box.ToolboxKeyboardView", false, cl);
+            Set<?> toolboxHooks = XposedBridge.hookAllMethods(
+                    toolbox,
+                    "onAttachedToWindow",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            if (!(param.thisObject instanceof View)) return;
+                            final View view = (View) param.thisObject;
+                            view.post(() -> recolorKnownGrayTree(view, HookConfig.current()));
+                        }
+                    });
+
+            Class<?> inputRoot = Class.forName(
+                    "com.bytedance.android.input.keyboard.areacontrol.InputViewRoot", false, cl);
+            XC_MethodHook rootCallback = new XC_MethodHook() {
+                @Override
+                protected void afterHookedMethod(MethodHookParam param) {
+                    if (!(param.thisObject instanceof View)) return;
+                    final View view = (View) param.thisObject;
+                    view.post(() -> recolorKnownGrayTree(view, HookConfig.current()));
+                }
+            };
+            Set<?> rootV = XposedBridge.hookAllMethods(inputRoot, "V", rootCallback);
+            Set<?> rootX2 = XposedBridge.hookAllMethods(inputRoot, "x2", rootCallback);
+            Set<?> rootAttached = XposedBridge.hookAllMethods(inputRoot, "onAttachedToWindow", rootCallback);
+            info("extended view hooks installed="
+                    + toolboxHooks.size() + "/" + rootV.size() + "/"
+                    + rootX2.size() + "/" + rootAttached.size());
+        } catch (Throwable t) {
+            error("extended view hook install failed", t);
+        }
     }
 
     private static GradientDrawable roundedDrawable(Context context, int color, float radiusDp) {
@@ -107,56 +179,82 @@ public final class MainHook implements IXposedHookLoadPackage {
     }
 
     private static Integer overrideColor(Resources resources, int id, Context context) {
-        HookConfig.Snapshot config = HookConfig.current();
+        HookConfig.Values config = HookConfig.current();
         if (!config.enabled) return null;
         try {
             String entry = resources.getResourceEntryName(id);
+
             if ("navigation_bar_normal".equals(entry)) {
-                return MonetSkin.keyboardSurface(context);
+                return MonetSkin.keyboardSurface(context, config);
             }
-            if ("ime_keyboard_candidate_font_bg".equals(entry)
-                    || "ime_keyboard_candidate_text_bg".equals(entry)
-                    || "candidate_item_text_bg".equals(entry)
-                    || "candidate_tip_background".equals(entry)
-                    || "more_candidate_segment_selected_bg".equals(entry)
-                    || "more_candidate_syllable_selected_bg".equals(entry)
-                    || "more_candidate_item_pressed".equals(entry)) {
-                return MonetSkin.candidateBackground(context);
+
+            if (config.syncExtendedPanels) {
+                if ("system_keyboard_bk".equals(entry)
+                        || "keyboard_top_start_color".equals(entry)
+                        || "keyboard_top_end_color".equals(entry)
+                        || "BGPanelGray".equals(entry)
+                        || "BGPanelTone".equals(entry)
+                        || "BGPanelToneiOS".equals(entry)
+                        || "BGPanelReverse".equals(entry)
+                        || "ConstBGPanelReverse".equals(entry)
+                        || "navigation_bar_ai_writing".equals(entry)
+                        || "aiwriting_bk_navigation".equals(entry)
+                        || "asr_long_press_navigation_normal".equals(entry)) {
+                    return MonetSkin.keyboardSurface(context, config);
+                }
+                if ("BGPanelTint".equals(entry)
+                        || "BGPanelTintiOS".equals(entry)
+                        || "ime_keyboard_candidate_font_bg".equals(entry)
+                        || "ime_keyboard_candidate_text_bg".equals(entry)
+                        || "candidate_item_text_bg".equals(entry)
+                        || "candidate_tip_background".equals(entry)
+                        || "more_candidate_segment_selected_bg".equals(entry)
+                        || "more_candidate_syllable_selected_bg".equals(entry)
+                        || "more_candidate_item_pressed".equals(entry)
+                        || "ime_keyboard_iv_bg_color".equals(entry)
+                        || "ime_toolbar_clipboard_bg_color".equals(entry)
+                        || "ime_toolbar_tips_bg_color".equals(entry)
+                        || "clipboard_history_item_bg_color".equals(entry)
+                        || "common_phrase_item_bg".equals(entry)
+                        || "cross_device_clipboard_card_bg".equals(entry)
+                        || "cross_device_clipboard_close_bg".equals(entry)) {
+                    return MonetSkin.candidateBackground(context, config);
+                }
+                if ("more_candidate_panel_bg".equals(entry)
+                        || "more_candidate_content_bg".equals(entry)) {
+                    return MonetSkin.keyboardSurface(context, config);
+                }
+                if ("more_candidate_delete_bg".equals(entry)) {
+                    return MonetSkin.functionKeySurface(context, config);
+                }
+                if ("more_candidate_delete_pressed".equals(entry)) {
+                    return MonetSkin.functionKeyPressedSurface(context, config);
+                }
             }
-            if ("more_candidate_panel_bg".equals(entry)
-                    || "more_candidate_content_bg".equals(entry)) {
-                return MonetSkin.keyboardSurface(context);
-            }
-            if ("more_candidate_delete_bg".equals(entry)) {
-                return MonetSkin.functionKeySurface(context);
-            }
+
             if ("ime_key_normal_bg_color".equals(entry)) {
-                return MonetSkin.letterKeySurface(context, config.tintedLetterKeys);
+                return MonetSkin.letterKeySurface(context, config);
             }
             if ("ime_key_normal_press_bg_color".equals(entry)) {
-                return MonetSkin.functionKeyPressedSurface(context);
+                return MonetSkin.functionKeyPressedSurface(context, config);
             }
             if ("ime_key_gray_clickable_bg_color".equals(entry)
                     || "ime_key_gray_un_clickable_bg_color".equals(entry)) {
-                return MonetSkin.functionKeySurface(context);
+                return MonetSkin.functionKeySurface(context, config);
             }
             if ("ime_key_gray_clickable_press_bg_color".equals(entry)
                     || "ime_key_gray_un_clickable_press_bg_color".equals(entry)) {
-                return MonetSkin.functionKeyPressedSurface(context);
+                return MonetSkin.functionKeyPressedSurface(context, config);
             }
             if ("ime_key_blue_clickable_bg_color".equals(entry)) {
                 return config.highlightActionKey
                         ? MonetSkin.primary(context)
-                        : MonetSkin.functionKeySurface(context);
+                        : MonetSkin.functionKeySurface(context, config);
             }
             if ("ime_key_blue_clickable_press_bg_color".equals(entry)) {
-                return MonetSkin.functionKeyPressedSurface(context);
+                return MonetSkin.functionKeyPressedSurface(context, config);
             }
-            if ("ime_keyboard_iv_bg_color".equals(entry)
-                    || "ime_toolbar_clipboard_bg_color".equals(entry)
-                    || "ime_toolbar_tips_bg_color".equals(entry)) {
-                return MonetSkin.candidateBackground(context);
-            }
+
             if (config.highlightFirstCandidate) {
                 if ("candidate_item_text_highlighted".equals(entry)
                         || "ime_keyboard_candidate_text_color".equals(entry)) {
@@ -174,7 +272,7 @@ public final class MainHook implements IXposedHookLoadPackage {
     private static void applyImeNavigation(Object service) {
         if (!(service instanceof Context)) return;
         Context context = (Context) service;
-        HookConfig.Snapshot config = HookConfig.current();
+        HookConfig.Values config = HookConfig.current();
         if (!config.enabled || !config.syncSystemNav) return;
 
         try {
@@ -341,7 +439,7 @@ public final class MainHook implements IXposedHookLoadPackage {
                     new XC_MethodHook() {
                         @Override
                         protected void beforeHookedMethod(MethodHookParam param) {
-                            HookConfig.Snapshot config = HookConfig.current();
+                            HookConfig.Values config = HookConfig.current();
                             if (!config.enabled || !config.syncSystemNav) return;
                             if (param.args == null || param.args.length != 1) return;
                             if (!(param.args[0] instanceof Integer) || !(param.thisObject instanceof Context)) return;
@@ -395,10 +493,12 @@ public final class MainHook implements IXposedHookLoadPackage {
     @Override
     public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lpparam) {
         if (!TARGET.equals(lpparam.packageName)) return;
+        if (!TARGET.equals(lpparam.processName)) return;
         info("package loaded, process=" + lpparam.processName);
         HookConfig.refresh();
         installColorStateHooks(lpparam.classLoader);
         installAppSurfaceHooks(lpparam.classLoader);
+        installExtendedPanelViewHooks(lpparam.classLoader);
         installImeWindowHooks();
 
         try {
@@ -414,7 +514,7 @@ public final class MainHook implements IXposedHookLoadPackage {
                         @Override
                         protected void afterHookedMethod(MethodHookParam param) {
                             try {
-                                HookConfig.Snapshot config = HookConfig.refresh();
+                                HookConfig.Values config = HookConfig.refresh();
                                 if (!config.enabled) return;
 
                                 Object raw = param.getResult();

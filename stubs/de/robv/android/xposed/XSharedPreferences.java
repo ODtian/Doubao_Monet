@@ -3,4 +3,5 @@ public class XSharedPreferences {
     public XSharedPreferences(String packageName, String prefFileName) {}
     public void reload() {}
     public boolean getBoolean(String key, boolean defValue){ return defValue; }
+    public int getInt(String key, int defValue){ return defValue; }
 }

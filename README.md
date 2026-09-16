@@ -2,7 +2,7 @@
 
 为 Android 版豆包输入法提供 Material You / Monet 动态配色的 Xposed 模块。
 
-当前实现不修改、不重签豆包输入法本体，而是在运行时覆盖豆包自己的键盘皮肤颜色，并同步 Android 侧候选栏、键盘底板和导航区颜色。
+当前实现不修改、不重签豆包输入法本体，而是在运行时覆盖豆包自己的键盘皮肤颜色，并同步 Android 侧候选栏、工具面板、键盘底板和导航区颜色。
 
 ## 当前状态
 
@@ -20,27 +20,32 @@
 - 直接读取 Android framework 的 Monet 动态色，而不是自行计算壁纸色
 - 浅色 / 深色模式独立映射
 - 键盘主体、候选栏和底部导航区统一 surface
-- 普通字母键、功能键、按下态使用 surface 与 Monet primary 的轻量混色，避免纯白 / 高饱和蓝块
+- 覆盖豆包工具面板、顶部工具栏、更多候选等独立背景，避免切换面板后回到原始灰色
+- 普通字母键、功能键、候选高亮、按下态的 Monet 混色强度可独立调节
+- 键盘底板也可单独调节 Monet 染色强度
 - 首候选固定 `#4F84FF` 改为系统 Monet primary
 - 中文首候选拼音高亮同步 Monet primary
-- 搜索 / 确定 / 换行键默认统一为功能键容器色
-- 可选突出搜索 / 确定 action 键
+- 搜索 / 确定 / 换行键默认统一为功能键层级，可选突出 action 键
 - 模块自带设置界面
 
-## 默认颜色映射
+## 默认配色策略
 
-| 豆包元素 | Material / Monet token |
-| --- | --- |
-| 键盘主体 / 候选栏 | `system_surface_container_*` |
-| 普通字母键 | surface 与 primary 约 4% 混色（可增强到约 10%） |
-| 功能键 | `surface_container` 与 primary 约 10% 混色 |
-| 功能键按下态 | `surface_container` 与 primary 约 18% 混色 |
-| 主文字 | `system_on_surface_*` |
-| 次文字 / 拼音 | `system_on_surface_variant_*` |
-| 首候选强调文字 | `system_primary_*` |
-| 首候选背景 | `surface_container` 与 primary 约 6–10% 混色 |
-| 分隔线 | `system_outline_variant_*` |
-| 底部导航区 | 与键盘主体相同的 surface |
+混色均以当前系统 Monet primary 为染色来源，0% 表示只使用对应 Material surface。
+
+| 元素 | 默认值 |
+| --- | ---: |
+| 键盘底板 | 0% |
+| 普通字母键 | 2% |
+| 功能键 | 6% |
+| 候选 / 面板高亮 | 5% |
+| 按下态 | 12% |
+
+文字与分隔线仍直接使用系统 Material token：
+
+- 主文字：`system_on_surface_*`
+- 次文字 / 拼音：`system_on_surface_variant_*`
+- 首候选强调文字：`system_primary_*`
+- 分隔线：`system_outline_variant_*`
 
 ## 安装
 
@@ -48,21 +53,39 @@
 2. 在 Vector / LSPosed 中启用 `Doubao Monet`。
 3. 作用域只勾选 `com.bytedance.android.doubaoime`。
 4. 强行停止一次豆包输入法进程，重新唤起键盘。
-5. 从桌面打开 `Doubao Monet` 可调整颜色策略。
+5. 从桌面打开 `Doubao Monet` 调整颜色策略。
 
 如果豆包更新后模块失效，建议先确认：
 
 - `com.bytedance.android.input.keyboard.KeyboardView#getAssetsMgr()` 是否仍存在
 - `assets/skin/default/values/colors.xml` / `dark_colors.xml` 是否仍存在
+- `com.bytedance.common_biz.tool_box.ToolboxKeyboardView` 是否仍存在
 - Android 资源 `navigation_bar_normal`、`candidate_item_text_highlighted` 是否仍存在
 
 ## 设置项
 
-- **启用模块**：关闭后需重启豆包输入法进程以完全恢复原始资源
-- **统一键盘与底部导航区**：同步候选栏、键盘主体、系统导航区域
-- **字母键增强染色**：默认只有轻微壁纸色，开启后提高染色强度
+### 外观
+
+- **启用 Monet 配色**：关闭后需重启豆包输入法进程以完全恢复原始资源
+- **底部区域跟随键盘**：同步候选栏、键盘主体和系统导航区域
+- **扩展面板跟随键盘**：覆盖工具面板、顶部工具栏、更多候选等原始灰色区域
+
+### 混色强度
+
+分别提供滑杆调整：
+
+- 键盘底板
+- 普通字母键
+- 功能键
+- 候选 / 面板高亮
+- 按下态
+
+数值修改后，收起并重新唤起键盘即可刷新；少数界面需要重启一次豆包输入法。
+
+### 候选与动作键
+
 - **首候选使用 Monet 强调色**：替换豆包固定蓝 `#4F84FF`
-- **突出搜索 / 确定键**：打开后 action 键使用 primary；关闭时与换行等功能键统一
+- **突出搜索 / 确定键**：开启后 action 键使用更明显的 primary；关闭时与其它功能键统一
 
 ## 构建
 
@@ -112,11 +135,13 @@ assets/skin/default/
 
 模块在 `getAssetsMgr()` 返回后追加一个只包含覆盖颜色文件的小 ZIP。Android AssetManager 会优先读取后追加路径中的同名 asset，因此无需修改豆包 APK。
 
-豆包还有一部分颜色来自 Android `res/color`，例如首候选的固定蓝和键盘底部背景；这些通过针对性的运行时资源读取拦截映射到 Monet palette。
+豆包还有一部分颜色来自 Android `res/color` / drawable，例如首候选固定蓝、键盘底部背景和候选高亮背景；这些通过针对性的运行时资源拦截映射到 Monet palette。
+
+工具面板等区域在 XML inflate 时已把 `navigation_bar_normal` 解析成 Drawable，单纯拦截 `getColor()` 无法覆盖。因此模块还会在 `ToolboxKeyboardView` / `InputViewRoot` 的 View 子树中，仅替换已知豆包原始灰色背景，避免全局改色影响其它 UI。
 
 ## 致谢
 
-设计思路参考了 [0x1e93d/WeType_Monet](https://github.com/0x1e93d/WeType_Monet)。WeType_Monet 主要使用 Android RRO；豆包键盘主体使用自定义 asset 皮肤，因此本项目采用 AssetManager 注入 + Android 资源拦截的组合方式。
+设计思路参考了 [0x1e93d/WeType_Monet](https://github.com/0x1e93d/WeType_Monet)。WeType_Monet 主要使用 Android RRO；豆包键盘主体使用自定义 asset 皮肤，因此本项目采用 AssetManager 注入 + Android 资源拦截 + 局部 View 背景处理的组合方式。
 
 ## 免责声明
 

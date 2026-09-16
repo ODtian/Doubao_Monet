@@ -13,6 +13,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.SeekBar;
 import android.widget.Switch;
 import android.widget.TextView;
 
@@ -79,12 +80,34 @@ public final class SettingsActivity extends Activity {
                 false);
         addDivider(appearance);
         addSwitchRow(appearance,
-                "字母键增强染色",
-                "默认只有很轻的壁纸色；开启后更明显。",
-                "tinted_letter_keys",
-                false,
+                "扩展面板跟随键盘",
+                "覆盖工具面板、顶部工具栏、更多候选等仍使用豆包原始灰色的区域。",
+                "sync_extended_panels",
+                true,
                 false);
         root.addView(appearance, cardParams());
+
+        addSectionTitle("混色强度");
+        LinearLayout tintCard = newCard();
+        TextView tintHint = bodyText("0% 只使用对应 Material surface；数值越大，越向当前 Monet primary 靠拢。", 12.2f, 0.62f);
+        LinearLayout.LayoutParams hintParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        hintParams.leftMargin = dp(14);
+        hintParams.rightMargin = dp(14);
+        hintParams.topMargin = dp(10);
+        hintParams.bottomMargin = dp(4);
+        tintCard.addView(tintHint, hintParams);
+        addSliderRow(tintCard, "键盘底板", "background_tint", HookConfig.DEFAULT_BACKGROUND_TINT, 30);
+        addDivider(tintCard);
+        addSliderRow(tintCard, "普通字母键", "letter_tint", HookConfig.DEFAULT_LETTER_TINT, 30);
+        addDivider(tintCard);
+        addSliderRow(tintCard, "功能键", "function_tint", HookConfig.DEFAULT_FUNCTION_TINT, 35);
+        addDivider(tintCard);
+        addSliderRow(tintCard, "候选 / 面板高亮", "candidate_tint", HookConfig.DEFAULT_CANDIDATE_TINT, 30);
+        addDivider(tintCard);
+        addSliderRow(tintCard, "按下态", "pressed_tint", HookConfig.DEFAULT_PRESSED_TINT, 45);
+        root.addView(tintCard, cardParams());
 
         addSectionTitle("候选与动作键");
         LinearLayout behavior = newCard();
@@ -180,7 +203,7 @@ public final class SettingsActivity extends Activity {
         row.addView(textBlock, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
         TextView version = new TextView(this);
-        version.setText("0.3.0");
+        version.setText("0.3.1");
         version.setTextSize(12);
         version.setTextColor(onPrimaryContainer);
         version.setGravity(Gravity.CENTER);
@@ -205,7 +228,8 @@ public final class SettingsActivity extends Activity {
         dots.addView(surfaceDot, secondDot);
         LinearLayout.LayoutParams thirdDot = new LinearLayout.LayoutParams(dp(30), dp(30));
         thirdDot.leftMargin = -dp(6);
-        View functionDot = colorDot(blend(surfaceContainer, primary, 0.10f));
+        int functionTint = prefs.getInt("function_tint", HookConfig.DEFAULT_FUNCTION_TINT);
+        View functionDot = colorDot(blend(surfaceContainer, primary, functionTint / 100f));
         dots.addView(functionDot, thirdDot);
         card.addView(dots);
 
@@ -304,6 +328,63 @@ public final class SettingsActivity extends Activity {
             if (toggle.isEnabled()) toggle.toggle();
         });
         parent.addView(row);
+    }
+
+    private void addSliderRow(
+            LinearLayout parent,
+            String title,
+            String key,
+            int defaultValue,
+            int maxValue) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(14), dp(10), dp(14), dp(10));
+
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView titleView = bodyText(title, 14.5f, 1f);
+        titleView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        header.addView(titleView, new LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1f));
+
+        TextView valueView = bodyText("", 13f, 0.72f);
+        valueView.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        header.addView(valueView, new LinearLayout.LayoutParams(
+                dp(52),
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+        box.addView(header);
+
+        SeekBar seek = new SeekBar(this);
+        seek.setMax(maxValue);
+        int initial = Math.max(0, Math.min(maxValue, prefs.getInt(key, defaultValue)));
+        seek.setProgress(initial);
+        valueView.setText(initial + "%");
+        seek.setThumbTintList(ColorStateList.valueOf(primary));
+        seek.setProgressTintList(ColorStateList.valueOf(primary));
+        seek.setProgressBackgroundTintList(ColorStateList.valueOf(withAlpha(onSurfaceVariant, 0.18f)));
+        seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                valueView.setText(progress + "%");
+                if (fromUser) prefs.edit().putInt(key, progress).apply();
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {}
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {}
+        });
+        LinearLayout.LayoutParams seekParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        seekParams.topMargin = dp(2);
+        box.addView(seek, seekParams);
+        parent.addView(box);
     }
 
     private void addDivider(LinearLayout parent) {
