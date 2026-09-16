@@ -18,6 +18,25 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 final class MonetSkin {
+    private static volatile Palette cachedPalette;
+    private static volatile int cachedNightMode = Integer.MIN_VALUE;
+
+    static void refreshPalette(Resources resources) {
+        if (resources == null) return;
+        synchronized (MonetSkin.class) {
+            cachedPalette = Palette.read(resources);
+            cachedNightMode = resources.getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
+        }
+    }
+
+    private static Palette palette(Resources resources) {
+        int nightMode = resources.getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
+        Palette value = cachedPalette;
+        if (value != null && cachedNightMode == nightMode) return value;
+        refreshPalette(resources);
+        return cachedPalette;
+    }
+
     static final class Result {
         final File zip;
         final String paletteKey;
@@ -28,9 +47,13 @@ final class MonetSkin {
         }
     }
 
-    static Result build(Context context, AssetManager source, HookConfig.Values config) throws Exception {
-        Palette p = Palette.read(context.getResources());
-        String key = "v6_" + p.key() + "_" + config.key();
+    static String paletteKey(Context context, HookConfig.Values config) {
+        Palette p = palette(context.getResources());
+        return "v7_" + p.key() + "_" + config.key();
+    }
+
+    static Result build(Context context, AssetManager source, HookConfig.Values config, String key) throws Exception {
+        Palette p = palette(context.getResources());
         File dir = new File(context.getCodeCacheDir(), "doubao_monet");
         if (!dir.exists() && !dir.mkdirs() && !dir.isDirectory()) {
             throw new IllegalStateException("Cannot create " + dir);
@@ -60,7 +83,7 @@ final class MonetSkin {
     }
 
     static int keyboardSurface(Context context, HookConfig.Values config) {
-        Palette p = Palette.read(context.getResources());
+        Palette p = palette(context.getResources());
         if (isNight(context.getResources())) {
             return mix(p.surfaceContainerDark, p.primaryDark, config.backgroundTint / 100f);
         }
@@ -72,7 +95,7 @@ final class MonetSkin {
     }
 
     static int primary(Context context) {
-        Palette p = Palette.read(context.getResources());
+        Palette p = palette(context.getResources());
         return isNight(context.getResources()) ? p.primaryDark : p.primary;
     }
 
@@ -90,7 +113,7 @@ final class MonetSkin {
     }
 
     static int candidateBackground(Context context, HookConfig.Values config) {
-        Palette p = Palette.read(context.getResources());
+        Palette p = palette(context.getResources());
         if (isNight(context.getResources())) {
             return mix(p.surfaceHighDark, p.primaryDark, config.candidateTint / 100f);
         }
@@ -102,7 +125,7 @@ final class MonetSkin {
     }
 
     static int functionKeySurface(Context context, HookConfig.Values config) {
-        Palette p = Palette.read(context.getResources());
+        Palette p = palette(context.getResources());
         if (isNight(context.getResources())) {
             return mix(p.surfaceHighestDark, p.primaryDark, config.functionTint / 100f);
         }
@@ -114,7 +137,7 @@ final class MonetSkin {
     }
 
     static int letterKeySurface(Context context, HookConfig.Values config) {
-        Palette p = Palette.read(context.getResources());
+        Palette p = palette(context.getResources());
         if (isNight(context.getResources())) {
             return mix(p.surfaceHighDark, p.primaryDark, config.letterTint / 100f);
         }
@@ -126,7 +149,7 @@ final class MonetSkin {
     }
 
     static int functionKeyPressedSurface(Context context, HookConfig.Values config) {
-        Palette p = Palette.read(context.getResources());
+        Palette p = palette(context.getResources());
         if (isNight(context.getResources())) {
             return mix(p.surfaceHighestDark, p.primaryDark, config.pressedTint / 100f);
         }

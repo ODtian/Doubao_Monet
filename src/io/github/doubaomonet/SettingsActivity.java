@@ -7,17 +7,22 @@ import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.text.InputType;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.inputmethod.EditorInfo;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.Switch;
 import android.widget.TextView;
+import android.widget.Toast;
 
 public final class SettingsActivity extends Activity {
+    private static final String TARGET_PACKAGE = "com.bytedance.android.doubaoime";
     private SharedPreferences prefs;
     private LinearLayout root;
     private boolean night;
@@ -30,6 +35,9 @@ public final class SettingsActivity extends Activity {
     private int primaryContainer;
     private int onPrimaryContainer;
     private int outlineVariant;
+    private KeyboardPreviewView preview;
+    private TextView applyStatus;
+    private boolean dirty;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -52,10 +60,14 @@ public final class SettingsActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setBackgroundColor(surface);
+        scroll.setClipToPadding(false);
+        scroll.setClipChildren(false);
 
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(20), dp(18), dp(20), dp(32));
+        root.setClipChildren(false);
+        root.setClipToPadding(false);
+        root.setPadding(dp(22), dp(18), dp(22), dp(32));
         scroll.addView(root, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -63,6 +75,7 @@ public final class SettingsActivity extends Activity {
 
         addHeader();
         addPaletteCard();
+        addPreviewCard();
         addSectionTitle("外观");
         LinearLayout appearance = newCard();
         addSwitchRow(appearance,
@@ -127,27 +140,37 @@ public final class SettingsActivity extends Activity {
         root.addView(behavior, cardParams());
 
         addSectionTitle("应用");
-        TextView reset = new TextView(this);
-        reset.setText("恢复默认设置");
-        reset.setTextSize(15);
-        reset.setGravity(Gravity.CENTER);
-        reset.setTextColor(onPrimaryContainer);
-        reset.setBackground(roundRect(primaryContainer, 18));
-        reset.setPadding(dp(18), dp(14), dp(18), dp(14));
-        reset.setClickable(true);
-        reset.setFocusable(true);
+        LinearLayout applyCard = newCard();
+        applyStatus = bodyText("当前设置已保存；实际键盘需要重新创建后刷新。", 12.4f, 0.68f);
+        applyStatus.setPadding(dp(14), dp(10), dp(14), dp(4));
+        applyCard.addView(applyStatus);
+
+        TextView restart = actionButton("应用并重启豆包输入法", true);
+        restart.setOnClickListener(v -> restartTarget());
+        LinearLayout.LayoutParams restartParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        restartParams.leftMargin = dp(10);
+        restartParams.rightMargin = dp(10);
+        restartParams.topMargin = dp(8);
+        applyCard.addView(restart, restartParams);
+
+        TextView reset = actionButton("恢复默认设置", false);
         reset.setOnClickListener(v -> {
-            prefs.edit().clear().apply();
+            prefs.edit().clear().commit();
+            dirty = true;
             recreate();
         });
         LinearLayout.LayoutParams resetParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT);
-        resetParams.topMargin = dp(2);
-        root.addView(reset, resetParams);
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        resetParams.leftMargin = dp(10);
+        resetParams.rightMargin = dp(10);
+        resetParams.topMargin = dp(8);
+        resetParams.bottomMargin = dp(10);
+        applyCard.addView(reset, resetParams);
+        root.addView(applyCard, cardParams());
 
         TextView footer = bodyText(
-                "修改后收起并重新唤起键盘即可刷新；少数界面需要重启一次豆包输入法。\n"
+                "拖动时预览立即更新；松手或输入数字后才写入设置。实际豆包键盘请点“应用并重启”。\n"
                         + "适配：豆包输入法 1.4.5 · Android 12+ · Vector / Xposed compatible",
                 12.2f,
                 0.68f);
@@ -203,7 +226,7 @@ public final class SettingsActivity extends Activity {
         row.addView(textBlock, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
         TextView version = new TextView(this);
-        version.setText("0.3.1");
+        version.setText("0.3.2");
         version.setTextSize(12);
         version.setTextColor(onPrimaryContainer);
         version.setGravity(Gravity.CENTER);
@@ -257,6 +280,96 @@ public final class SettingsActivity extends Activity {
         root.addView(card, params);
     }
 
+    private void addPreviewCard() {
+        addSectionTitle("实时预览");
+        LinearLayout card = newCard();
+        preview = new KeyboardPreviewView(this, prefs);
+        LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(238));
+        previewParams.leftMargin = dp(8);
+        previewParams.rightMargin = dp(8);
+        previewParams.topMargin = dp(8);
+        card.addView(preview, previewParams);
+
+        TextView hint = bodyText("预览会跟随滑杆实时变化；它模拟候选栏、键帽、功能键和底部区域。", 12.2f, 0.62f);
+        LinearLayout.LayoutParams hintParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        hintParams.leftMargin = dp(14);
+        hintParams.rightMargin = dp(14);
+        hintParams.topMargin = dp(8);
+        hintParams.bottomMargin = dp(10);
+        card.addView(hint, hintParams);
+        root.addView(card, cardParams());
+    }
+
+    private TextView tickLabel(String text) {
+        TextView v = bodyText(text, 10.5f, 0.48f);
+        v.setText(text);
+        return v;
+    }
+
+    private TextView actionButton(String text, boolean primaryButton) {
+        TextView v = new TextView(this);
+        v.setText(text);
+        v.setTextSize(14.5f);
+        v.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        v.setGravity(Gravity.CENTER);
+        v.setPadding(dp(16), dp(13), dp(16), dp(13));
+        if (primaryButton) {
+            v.setTextColor(onPrimaryContainer);
+            v.setBackground(roundRect(primaryContainer, 16));
+        } else {
+            v.setTextColor(onSurface);
+            v.setBackground(roundRect(surfaceContainer, 16));
+        }
+        v.setClickable(true);
+        v.setFocusable(true);
+        return v;
+    }
+
+    private void markDirty() {
+        dirty = true;
+        if (applyStatus != null) {
+            applyStatus.setText("有未应用更改 · 预览已更新，实际键盘仍是旧配置。需要点下方按钮刷新。");
+            applyStatus.setTextColor(primary);
+            applyStatus.setAlpha(1f);
+        }
+    }
+
+    private void restartTarget() {
+        if (applyStatus != null) {
+            applyStatus.setText("正在重启豆包输入法…");
+            applyStatus.setTextColor(onSurfaceVariant);
+        }
+        new Thread(() -> {
+            boolean ok = false;
+            try {
+                Process process = new ProcessBuilder(
+                        "su", "-c", "am force-stop " + TARGET_PACKAGE).redirectErrorStream(true).start();
+                ok = process.waitFor() == 0;
+            } catch (Throwable ignored) {
+            }
+            final boolean success = ok;
+            runOnUiThread(() -> {
+                if (success) {
+                    dirty = false;
+                    if (applyStatus != null) {
+                        applyStatus.setText("已重启豆包输入法。回到输入框即可看到新配置。");
+                        applyStatus.setTextColor(onSurfaceVariant);
+                        applyStatus.setAlpha(0.78f);
+                    }
+                    Toast.makeText(this, "豆包输入法已重启", Toast.LENGTH_SHORT).show();
+                } else {
+                    if (applyStatus != null) {
+                        applyStatus.setText("自动重启失败：未获得 root 权限。请手动强行停止豆包输入法。");
+                        applyStatus.setTextColor(primary);
+                    }
+                    Toast.makeText(this, "重启失败，请检查 root 授权", Toast.LENGTH_LONG).show();
+                }
+            });
+        }, "DoubaoMonet-Restart").start();
+    }
+
     private void addSectionTitle(String text) {
         TextView v = new TextView(this);
         v.setText(text);
@@ -276,14 +389,20 @@ public final class SettingsActivity extends Activity {
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(4), dp(4), dp(4), dp(4));
         card.setBackground(roundRect(surfaceLow, 22));
-        card.setElevation(dp(1));
+        card.setElevation(dp(2));
+        card.setClipChildren(false);
+        card.setClipToPadding(false);
         return card;
     }
 
     private LinearLayout.LayoutParams cardParams() {
-        return new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.leftMargin = dp(4);
+        lp.rightMargin = dp(4);
+        lp.bottomMargin = dp(2);
+        return lp;
     }
 
     private void addSwitchRow(
@@ -316,8 +435,11 @@ public final class SettingsActivity extends Activity {
         toggle.setChecked(prefs.getBoolean(key, defaultValue));
         toggle.setEnabled(!disabled);
         tintSwitch(toggle);
-        toggle.setOnCheckedChangeListener((buttonView, isChecked) ->
-                prefs.edit().putBoolean(key, isChecked).apply());
+        toggle.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            prefs.edit().putBoolean(key, isChecked).commit();
+            if (preview != null) preview.setFlag(key, isChecked);
+            markDirty();
+        });
         LinearLayout.LayoutParams toggleParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -347,43 +469,112 @@ public final class SettingsActivity extends Activity {
         TextView titleView = bodyText(title, 14.5f, 1f);
         titleView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         header.addView(titleView, new LinearLayout.LayoutParams(
-                0,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                1f));
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        TextView valueView = bodyText("", 13f, 0.72f);
-        valueView.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        header.addView(valueView, new LinearLayout.LayoutParams(
-                dp(52),
-                ViewGroup.LayoutParams.WRAP_CONTENT));
+        EditText number = new EditText(this);
+        number.setSingleLine(true);
+        number.setInputType(InputType.TYPE_CLASS_NUMBER);
+        number.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        number.setTextSize(13f);
+        number.setTextColor(onSurface);
+        number.setGravity(Gravity.CENTER);
+        number.setSelectAllOnFocus(true);
+        number.setPadding(dp(6), dp(5), dp(6), dp(5));
+        number.setBackground(roundRect(surfaceContainer, 10));
+        LinearLayout.LayoutParams numberParams = new LinearLayout.LayoutParams(dp(52), dp(38));
+        header.addView(number, numberParams);
+
+        TextView percent = bodyText("%", 12.5f, 0.62f);
+        percent.setGravity(Gravity.CENTER);
+        header.addView(percent, new LinearLayout.LayoutParams(dp(22), dp(38)));
         box.addView(header);
 
         SeekBar seek = new SeekBar(this);
         seek.setMax(maxValue);
+        seek.setKeyProgressIncrement(1);
         int initial = Math.max(0, Math.min(maxValue, prefs.getInt(key, defaultValue)));
         seek.setProgress(initial);
-        valueView.setText(initial + "%");
+        number.setText(String.valueOf(initial));
         seek.setThumbTintList(ColorStateList.valueOf(primary));
         seek.setProgressTintList(ColorStateList.valueOf(primary));
         seek.setProgressBackgroundTintList(ColorStateList.valueOf(withAlpha(onSurfaceVariant, 0.18f)));
+
+        final boolean[] updating = {false};
+        Runnable commitNumber = () -> {
+            if (updating[0]) return;
+            int value;
+            try {
+                value = Integer.parseInt(number.getText().toString().trim());
+            } catch (Throwable ignored) {
+                value = seek.getProgress();
+            }
+            value = Math.max(0, Math.min(maxValue, value));
+            updating[0] = true;
+            seek.setProgress(value);
+            number.setText(String.valueOf(value));
+            number.setSelection(number.length());
+            updating[0] = false;
+            prefs.edit().putInt(key, value).commit();
+            if (preview != null) preview.setTint(key, value);
+            markDirty();
+        };
+
         seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                valueView.setText(progress + "%");
-                if (fromUser) prefs.edit().putInt(key, progress).apply();
+                if (!updating[0]) {
+                    updating[0] = true;
+                    number.setText(String.valueOf(progress));
+                    number.setSelection(number.length());
+                    updating[0] = false;
+                }
+                if (preview != null) preview.setTint(key, progress);
             }
 
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {}
+            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
 
             @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {}
+            public void onStopTrackingTouch(SeekBar seekBar) {
+                int value = seekBar.getProgress();
+                prefs.edit().putInt(key, value).commit();
+                if (preview != null) preview.setTint(key, value);
+                markDirty();
+            }
         });
+
+        number.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == EditorInfo.IME_ACTION_DONE) {
+                commitNumber.run();
+                number.clearFocus();
+                return true;
+            }
+            return false;
+        });
+        number.setOnFocusChangeListener((v, hasFocus) -> {
+            if (!hasFocus) commitNumber.run();
+        });
+
         LinearLayout.LayoutParams seekParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        seekParams.topMargin = dp(2);
+        seekParams.topMargin = dp(1);
         box.addView(seek, seekParams);
+
+        LinearLayout ticks = new LinearLayout(this);
+        ticks.setOrientation(LinearLayout.HORIZONTAL);
+        ticks.addView(tickLabel("0"), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView mid = tickLabel(String.valueOf(maxValue / 2));
+        mid.setGravity(Gravity.CENTER);
+        ticks.addView(mid, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView max = tickLabel(String.valueOf(maxValue));
+        max.setGravity(Gravity.END);
+        ticks.addView(max, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        LinearLayout.LayoutParams ticksParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        ticksParams.leftMargin = dp(14);
+        ticksParams.rightMargin = dp(14);
+        ticksParams.topMargin = -dp(5);
+        box.addView(ticks, ticksParams);
         parent.addView(box);
     }
 

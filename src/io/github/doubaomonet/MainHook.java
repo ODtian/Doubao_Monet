@@ -9,14 +9,12 @@ import android.graphics.drawable.ColorDrawable;
 import android.view.ViewGroup;
 import android.os.Build;
 import android.util.Log;
+import android.util.SparseIntArray;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowInsetsController;
 
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
 import java.lang.reflect.Method;
-import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
@@ -33,6 +31,27 @@ public final class MainHook implements IXposedHookLoadPackage {
     private static final String TAG = "DoubaoMonet";
     private static final Map<AssetManager, String> APPLIED =
             Collections.synchronizedMap(new WeakHashMap<>());
+    private static volatile Context APP_CONTEXT;
+    private static volatile SparseIntArray COLOR_ROLES;
+    private static volatile SparseIntArray DRAWABLE_ROLES;
+    private static final Object RESOURCE_ROLE_LOCK = new Object();
+
+    private static final int C_NAV = 1;
+    private static final int C_EXT_SURFACE = 2;
+    private static final int C_EXT_CANDIDATE = 3;
+    private static final int C_EXT_DELETE = 4;
+    private static final int C_EXT_DELETE_PRESSED = 5;
+    private static final int C_LETTER = 6;
+    private static final int C_PRESSED = 7;
+    private static final int C_FUNCTION = 8;
+    private static final int C_ACTION = 9;
+    private static final int C_PRIMARY_TEXT = 10;
+    private static final int C_PRIMARY_ALPHA = 11;
+
+    private static final int D_CANDIDATE = 1;
+    private static final int D_PRESSED = 2;
+    private static final int D_MORE_SEGMENT = 3;
+    private static final int D_MORE_PANEL = 4;
 
     private static void info(String message) {
         Log.i(TAG, message);
@@ -46,62 +65,123 @@ public final class MainHook implements IXposedHookLoadPackage {
     }
 
     private static Context currentAppContext() {
-        try {
-            Class<?> helper = Class.forName("android.app.AndroidAppHelper");
-            Method m = helper.getDeclaredMethod("currentApplication");
-            Object app = m.invoke(null);
-            if (app instanceof Context) return (Context) app;
-        } catch (Throwable ignored) {
+        Context cached = APP_CONTEXT;
+        if (cached != null) return cached;
+        synchronized (MainHook.class) {
+            if (APP_CONTEXT != null) return APP_CONTEXT;
+            try {
+                Class<?> helper = Class.forName("android.app.AndroidAppHelper");
+                Method m = helper.getDeclaredMethod("currentApplication");
+                Object app = m.invoke(null);
+                if (app instanceof Context) {
+                    APP_CONTEXT = ((Context) app).getApplicationContext();
+                    if (APP_CONTEXT == null) APP_CONTEXT = (Context) app;
+                    return APP_CONTEXT;
+                }
+            } catch (Throwable ignored) {
+            }
+            try {
+                Class<?> thread = Class.forName("android.app.ActivityThread");
+                Method m = thread.getDeclaredMethod("currentApplication");
+                Object app = m.invoke(null);
+                if (app instanceof Context) {
+                    APP_CONTEXT = ((Context) app).getApplicationContext();
+                    if (APP_CONTEXT == null) APP_CONTEXT = (Context) app;
+                    return APP_CONTEXT;
+                }
+            } catch (Throwable ignored) {
+            }
+            return null;
         }
-        try {
-            Class<?> thread = Class.forName("android.app.ActivityThread");
-            Method m = thread.getDeclaredMethod("currentApplication");
-            Object app = m.invoke(null);
-            if (app instanceof Context) return (Context) app;
-        } catch (Throwable ignored) {
-        }
-        return null;
     }
 
-    private static String readBackThemeColor(AssetManager am) {
-        try (InputStream in = am.open("skin/default/values/colors.xml");
-             ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            byte[] buf = new byte[4096];
-            int n;
-            while ((n = in.read(buf)) >= 0) out.write(buf, 0, n);
-            String xml = new String(out.toByteArray(), StandardCharsets.UTF_8);
-            String marker = "name=\"theme_color\"";
-            int at = xml.indexOf(marker);
-            if (at < 0) return "missing";
-            int start = xml.indexOf('>', at);
-            int end = start < 0 ? -1 : xml.indexOf("</color>", start + 1);
-            if (start < 0 || end < 0) return "parse-failed";
-            return xml.substring(start + 1, end).trim();
-        } catch (Throwable t) {
-            return "read-failed:" + t.getClass().getSimpleName();
+    private static void rememberContext(Context context) {
+        if (context == null || APP_CONTEXT != null) return;
+        Context app = context.getApplicationContext();
+        APP_CONTEXT = app != null ? app : context;
+    }
+
+    private static void addRole(Resources resources, SparseIntArray map, String type, String name, int role) {
+        int id = resources.getIdentifier(name, type, TARGET);
+        if (id != 0) map.put(id, role);
+    }
+
+    private static void ensureResourceRoles(Resources resources) {
+        if (COLOR_ROLES != null && DRAWABLE_ROLES != null) return;
+        synchronized (RESOURCE_ROLE_LOCK) {
+            if (COLOR_ROLES != null && DRAWABLE_ROLES != null) return;
+            SparseIntArray colors = new SparseIntArray();
+            SparseIntArray drawables = new SparseIntArray();
+
+            addRole(resources, colors, "color", "navigation_bar_normal", C_NAV);
+            String[] extSurface = {
+                    "system_keyboard_bk", "keyboard_top_start_color", "keyboard_top_end_color",
+                    "BGPanelGray", "BGPanelTone", "BGPanelToneiOS", "BGPanelReverse",
+                    "ConstBGPanelReverse", "navigation_bar_ai_writing", "aiwriting_bk_navigation",
+                    "asr_long_press_navigation_normal", "more_candidate_panel_bg",
+                    "more_candidate_content_bg"
+            };
+            for (String name : extSurface) addRole(resources, colors, "color", name, C_EXT_SURFACE);
+
+            String[] extCandidate = {
+                    "BGPanelTint", "BGPanelTintiOS", "ime_keyboard_candidate_font_bg",
+                    "ime_keyboard_candidate_text_bg", "candidate_item_text_bg",
+                    "candidate_tip_background", "more_candidate_segment_selected_bg",
+                    "more_candidate_syllable_selected_bg", "more_candidate_item_pressed",
+                    "ime_keyboard_iv_bg_color", "ime_toolbar_clipboard_bg_color",
+                    "ime_toolbar_tips_bg_color", "clipboard_history_item_bg_color",
+                    "common_phrase_item_bg", "cross_device_clipboard_card_bg",
+                    "cross_device_clipboard_close_bg"
+            };
+            for (String name : extCandidate) addRole(resources, colors, "color", name, C_EXT_CANDIDATE);
+            addRole(resources, colors, "color", "more_candidate_delete_bg", C_EXT_DELETE);
+            addRole(resources, colors, "color", "more_candidate_delete_pressed", C_EXT_DELETE_PRESSED);
+
+            addRole(resources, colors, "color", "ime_key_normal_bg_color", C_LETTER);
+            String[] pressed = {
+                    "ime_key_normal_press_bg_color", "ime_key_gray_clickable_press_bg_color",
+                    "ime_key_gray_un_clickable_press_bg_color", "ime_key_blue_clickable_press_bg_color"
+            };
+            for (String name : pressed) addRole(resources, colors, "color", name, C_PRESSED);
+            addRole(resources, colors, "color", "ime_key_gray_clickable_bg_color", C_FUNCTION);
+            addRole(resources, colors, "color", "ime_key_gray_un_clickable_bg_color", C_FUNCTION);
+            addRole(resources, colors, "color", "ime_key_blue_clickable_bg_color", C_ACTION);
+            addRole(resources, colors, "color", "candidate_item_text_highlighted", C_PRIMARY_TEXT);
+            addRole(resources, colors, "color", "ime_keyboard_candidate_text_color", C_PRIMARY_TEXT);
+            addRole(resources, colors, "color", "candidate_pinyin_segment_text_highlighted", C_PRIMARY_ALPHA);
+
+            addRole(resources, drawables, "drawable", "bg_candidate_item_highlighted", D_CANDIDATE);
+            addRole(resources, drawables, "drawable", "bg_candidate_item_pressed", D_PRESSED);
+            addRole(resources, drawables, "drawable", "bg_more_candidate_segment_selected", D_MORE_SEGMENT);
+            addRole(resources, drawables, "drawable", "bg_more_candidate_panel", D_MORE_PANEL);
+
+            COLOR_ROLES = colors;
+            DRAWABLE_ROLES = drawables;
         }
     }
 
     private static Drawable overrideDrawable(Resources resources, int id, Context context) {
+        ensureResourceRoles(resources);
+        int role = DRAWABLE_ROLES.get(id, 0);
+        if (role == 0) return null;
         HookConfig.Values config = HookConfig.current();
         if (!config.enabled) return null;
-        try {
-            String entry = resources.getResourceEntryName(id);
-            if ("bg_candidate_item_highlighted".equals(entry)) {
+        switch (role) {
+            case D_CANDIDATE:
                 return roundedDrawable(context, MonetSkin.candidateBackground(context, config), 6f);
-            }
-            if ("bg_candidate_item_pressed".equals(entry)) {
+            case D_PRESSED:
                 return roundedDrawable(context, MonetSkin.functionKeyPressedSurface(context, config), 6f);
-            }
-            if ("bg_more_candidate_segment_selected".equals(entry)) {
-                return roundedDrawable(context, MonetSkin.candidateBackground(context, config), 24f);
-            }
-            if (config.syncExtendedPanels && "bg_more_candidate_panel".equals(entry)) {
-                return roundedDrawable(context, MonetSkin.keyboardSurface(context, config), 0f);
-            }
-        } catch (Throwable ignored) {
+            case D_MORE_SEGMENT:
+                return config.syncExtendedPanels
+                        ? roundedDrawable(context, MonetSkin.candidateBackground(context, config), 24f)
+                        : null;
+            case D_MORE_PANEL:
+                return config.syncExtendedPanels
+                        ? roundedDrawable(context, MonetSkin.keyboardSurface(context, config), 0f)
+                        : null;
+            default:
+                return null;
         }
-        return null;
     }
 
     private static boolean isKnownDoubaoGray(int color) {
@@ -179,94 +259,37 @@ public final class MainHook implements IXposedHookLoadPackage {
     }
 
     private static Integer overrideColor(Resources resources, int id, Context context) {
+        ensureResourceRoles(resources);
+        int role = COLOR_ROLES.get(id, 0);
+        if (role == 0) return null;
         HookConfig.Values config = HookConfig.current();
         if (!config.enabled) return null;
-        try {
-            String entry = resources.getResourceEntryName(id);
-
-            if ("navigation_bar_normal".equals(entry)) {
+        switch (role) {
+            case C_NAV:
                 return MonetSkin.keyboardSurface(context, config);
-            }
-
-            if (config.syncExtendedPanels) {
-                if ("system_keyboard_bk".equals(entry)
-                        || "keyboard_top_start_color".equals(entry)
-                        || "keyboard_top_end_color".equals(entry)
-                        || "BGPanelGray".equals(entry)
-                        || "BGPanelTone".equals(entry)
-                        || "BGPanelToneiOS".equals(entry)
-                        || "BGPanelReverse".equals(entry)
-                        || "ConstBGPanelReverse".equals(entry)
-                        || "navigation_bar_ai_writing".equals(entry)
-                        || "aiwriting_bk_navigation".equals(entry)
-                        || "asr_long_press_navigation_normal".equals(entry)) {
-                    return MonetSkin.keyboardSurface(context, config);
-                }
-                if ("BGPanelTint".equals(entry)
-                        || "BGPanelTintiOS".equals(entry)
-                        || "ime_keyboard_candidate_font_bg".equals(entry)
-                        || "ime_keyboard_candidate_text_bg".equals(entry)
-                        || "candidate_item_text_bg".equals(entry)
-                        || "candidate_tip_background".equals(entry)
-                        || "more_candidate_segment_selected_bg".equals(entry)
-                        || "more_candidate_syllable_selected_bg".equals(entry)
-                        || "more_candidate_item_pressed".equals(entry)
-                        || "ime_keyboard_iv_bg_color".equals(entry)
-                        || "ime_toolbar_clipboard_bg_color".equals(entry)
-                        || "ime_toolbar_tips_bg_color".equals(entry)
-                        || "clipboard_history_item_bg_color".equals(entry)
-                        || "common_phrase_item_bg".equals(entry)
-                        || "cross_device_clipboard_card_bg".equals(entry)
-                        || "cross_device_clipboard_close_bg".equals(entry)) {
-                    return MonetSkin.candidateBackground(context, config);
-                }
-                if ("more_candidate_panel_bg".equals(entry)
-                        || "more_candidate_content_bg".equals(entry)) {
-                    return MonetSkin.keyboardSurface(context, config);
-                }
-                if ("more_candidate_delete_bg".equals(entry)) {
-                    return MonetSkin.functionKeySurface(context, config);
-                }
-                if ("more_candidate_delete_pressed".equals(entry)) {
-                    return MonetSkin.functionKeyPressedSurface(context, config);
-                }
-            }
-
-            if ("ime_key_normal_bg_color".equals(entry)) {
+            case C_EXT_SURFACE:
+                return config.syncExtendedPanels ? MonetSkin.keyboardSurface(context, config) : null;
+            case C_EXT_CANDIDATE:
+                return config.syncExtendedPanels ? MonetSkin.candidateBackground(context, config) : null;
+            case C_EXT_DELETE:
+                return config.syncExtendedPanels ? MonetSkin.functionKeySurface(context, config) : null;
+            case C_EXT_DELETE_PRESSED:
+                return config.syncExtendedPanels ? MonetSkin.functionKeyPressedSurface(context, config) : null;
+            case C_LETTER:
                 return MonetSkin.letterKeySurface(context, config);
-            }
-            if ("ime_key_normal_press_bg_color".equals(entry)) {
+            case C_PRESSED:
                 return MonetSkin.functionKeyPressedSurface(context, config);
-            }
-            if ("ime_key_gray_clickable_bg_color".equals(entry)
-                    || "ime_key_gray_un_clickable_bg_color".equals(entry)) {
+            case C_FUNCTION:
                 return MonetSkin.functionKeySurface(context, config);
-            }
-            if ("ime_key_gray_clickable_press_bg_color".equals(entry)
-                    || "ime_key_gray_un_clickable_press_bg_color".equals(entry)) {
-                return MonetSkin.functionKeyPressedSurface(context, config);
-            }
-            if ("ime_key_blue_clickable_bg_color".equals(entry)) {
-                return config.highlightActionKey
-                        ? MonetSkin.primary(context)
-                        : MonetSkin.functionKeySurface(context, config);
-            }
-            if ("ime_key_blue_clickable_press_bg_color".equals(entry)) {
-                return MonetSkin.functionKeyPressedSurface(context, config);
-            }
-
-            if (config.highlightFirstCandidate) {
-                if ("candidate_item_text_highlighted".equals(entry)
-                        || "ime_keyboard_candidate_text_color".equals(entry)) {
-                    return MonetSkin.primary(context);
-                }
-                if ("candidate_pinyin_segment_text_highlighted".equals(entry)) {
-                    return MonetSkin.primaryWithAlpha(context, 0.80f);
-                }
-            }
-        } catch (Throwable ignored) {
+            case C_ACTION:
+                return config.highlightActionKey ? MonetSkin.primary(context) : MonetSkin.functionKeySurface(context, config);
+            case C_PRIMARY_TEXT:
+                return config.highlightFirstCandidate ? MonetSkin.primary(context) : null;
+            case C_PRIMARY_ALPHA:
+                return config.highlightFirstCandidate ? MonetSkin.primaryWithAlpha(context, 0.80f) : null;
+            default:
+                return null;
         }
-        return null;
     }
 
     private static void applyImeNavigation(Object service) {
@@ -319,7 +342,12 @@ public final class MainHook implements IXposedHookLoadPackage {
             XC_MethodHook callback = new XC_MethodHook() {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) {
-                    HookConfig.refresh();
+                    if (param.thisObject instanceof Context) {
+                        Context context = (Context) param.thisObject;
+                        rememberContext(context);
+                        HookConfig.refresh();
+                        MonetSkin.refreshPalette(context.getResources());
+                    }
                     applyImeNavigation(param.thisObject);
                 }
             };
@@ -335,62 +363,6 @@ public final class MainHook implements IXposedHookLoadPackage {
 
     private static void installAppSurfaceHooks(ClassLoader cl) {
         try {
-            Class<?> contextCompat = Class.forName("androidx.core.content.ContextCompat", false, cl);
-            Set<?> compatHooks = XposedBridge.hookAllMethods(
-                    contextCompat,
-                    "getColor",
-                    new XC_MethodHook() {
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) {
-                            if (param.args == null || param.args.length < 2) return;
-                            if (!(param.args[0] instanceof Context) || !(param.args[1] instanceof Integer)) return;
-                            Context context = (Context) param.args[0];
-                            Integer value = overrideColor(
-                                    context.getResources(),
-                                    (Integer) param.args[1],
-                                    context);
-                            if (value != null) param.setResult(value);
-                        }
-                    });
-
-            Set<?> contextHooks = XposedBridge.hookAllMethods(
-                    Context.class,
-                    "getColor",
-                    new XC_MethodHook() {
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) {
-                            if (!(param.thisObject instanceof Context)
-                                    || param.args == null
-                                    || param.args.length != 1
-                                    || !(param.args[0] instanceof Integer)) return;
-                            Context context = (Context) param.thisObject;
-                            Integer value = overrideColor(
-                                    context.getResources(),
-                                    (Integer) param.args[0],
-                                    context);
-                            if (value != null) param.setResult(value);
-                        }
-                    });
-
-            Set<?> contextDrawableHooks = XposedBridge.hookAllMethods(
-                    Context.class,
-                    "getDrawable",
-                    new XC_MethodHook() {
-                        @Override
-                        protected void afterHookedMethod(MethodHookParam param) {
-                            if (!(param.thisObject instanceof Context)
-                                    || param.args == null
-                                    || param.args.length != 1
-                                    || !(param.args[0] instanceof Integer)) return;
-                            Context context = (Context) param.thisObject;
-                            Drawable value = overrideDrawable(
-                                    context.getResources(),
-                                    (Integer) param.args[0],
-                                    context);
-                            if (value != null) param.setResult(value);
-                        }
-                    });
-
             Set<?> resourceDrawableHooks = XposedBridge.hookAllMethods(
                     Resources.class,
                     "getDrawable",
@@ -443,50 +415,15 @@ public final class MainHook implements IXposedHookLoadPackage {
                             if (!config.enabled || !config.syncSystemNav) return;
                             if (param.args == null || param.args.length != 1) return;
                             if (!(param.args[0] instanceof Integer) || !(param.thisObject instanceof Context)) return;
-                            param.args[0] = MonetSkin.navigationSurface((Context) param.thisObject);
+                            Context context = (Context) param.thisObject;
+                            rememberContext(context);
+                            param.args[0] = MonetSkin.navigationSurface(context);
                         }
                     });
             info("surface hooks installed="
-                    + compatHooks.size() + "/" + contextHooks.size() + "/"
-                    + contextDrawableHooks.size() + "/" + resourceDrawableHooks.size() + "/"
-                    + resourceHooks.size() + "/" + navHooks.size());
+                    + resourceDrawableHooks.size() + "/" + resourceHooks.size() + "/" + navHooks.size());
         } catch (Throwable t) {
             error("surface hook install failed", t);
-        }
-    }
-
-    private static void installColorStateHooks(ClassLoader cl) {
-        try {
-            Class<?> keyboardJni = Class.forName(
-                    "com.bytedance.android.doubaoime.KeyboardJni", false, cl);
-            Set<?> schemeHooks = XposedBridge.hookAllMethods(
-                    keyboardJni,
-                    "updateColorSchemeConf",
-                    new XC_MethodHook() {
-                        @Override
-                        protected void beforeHookedMethod(MethodHookParam param) {
-                            Object value = param.args != null && param.args.length > 0
-                                    ? param.args[0]
-                                    : null;
-                            info("updateColorSchemeConf=" + String.valueOf(value));
-                        }
-                    });
-            Set<?> transparentHooks = XposedBridge.hookAllMethods(
-                    keyboardJni,
-                    "setTransparent",
-                    new XC_MethodHook() {
-                        @Override
-                        protected void beforeHookedMethod(MethodHookParam param) {
-                            Object value = param.args != null && param.args.length > 0
-                                    ? param.args[0]
-                                    : null;
-                            info("setTransparent=" + String.valueOf(value));
-                        }
-                    });
-            info("color state hooks installed="
-                    + schemeHooks.size() + "/" + transparentHooks.size());
-        } catch (Throwable t) {
-            error("color state hook install failed", t);
         }
     }
 
@@ -496,7 +433,8 @@ public final class MainHook implements IXposedHookLoadPackage {
         if (!TARGET.equals(lpparam.processName)) return;
         info("package loaded, process=" + lpparam.processName);
         HookConfig.refresh();
-        installColorStateHooks(lpparam.classLoader);
+        Context initialContext = currentAppContext();
+        if (initialContext != null) MonetSkin.refreshPalette(initialContext.getResources());
         installAppSurfaceHooks(lpparam.classLoader);
         installExtendedPanelViewHooks(lpparam.classLoader);
         installImeWindowHooks();
@@ -514,7 +452,7 @@ public final class MainHook implements IXposedHookLoadPackage {
                         @Override
                         protected void afterHookedMethod(MethodHookParam param) {
                             try {
-                                HookConfig.Values config = HookConfig.refresh();
+                                HookConfig.Values config = HookConfig.current();
                                 if (!config.enabled) return;
 
                                 Object raw = param.getResult();
@@ -523,6 +461,7 @@ public final class MainHook implements IXposedHookLoadPackage {
                                         : null;
 
                                 Context context = currentAppContext();
+                                if (context != null) rememberContext(context);
                                 AssetManager am = original;
                                 if (am == null && context != null) am = context.getAssets();
 
@@ -532,9 +471,10 @@ public final class MainHook implements IXposedHookLoadPackage {
                                     return;
                                 }
 
-                                MonetSkin.Result built = MonetSkin.build(context, am, config);
+                                String desiredKey = MonetSkin.paletteKey(context, config);
                                 String old = APPLIED.get(am);
-                                if (!built.paletteKey.equals(old)) {
+                                if (!desiredKey.equals(old)) {
+                                    MonetSkin.Result built = MonetSkin.build(context, am, config, desiredKey);
                                     Object cookieObj = XposedHelpers.callMethod(
                                             am,
                                             "addAssetPath",
@@ -549,7 +489,6 @@ public final class MainHook implements IXposedHookLoadPackage {
                                     APPLIED.put(am, built.paletteKey);
                                     info("skin asset added, cookie=" + cookie
                                             + ", key=" + built.paletteKey);
-                                    info("asset readback theme_color=" + readBackThemeColor(am));
                                 }
 
                                 if (original == null) {
