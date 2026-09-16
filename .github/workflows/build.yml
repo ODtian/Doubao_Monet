@@ -58,7 +58,7 @@ jobs:
         run: bash scripts/build.sh
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: Doubao_Monet
           path: build/out/Doubao_Monet.apk
@@ -70,3 +70,4 @@ jobs:
         with:
           files: build/out/Doubao_Monet.apk
           generate_release_notes: true
+
