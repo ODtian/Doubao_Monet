@@ -30,7 +30,7 @@ final class KeyboardPreviewView extends View {
     private static final float SKIN_W = 355f;
     private static final float CANDIDATE_H = 57f;
     private static final float ROW_H = 57f;
-    private static final float NAV_H = 49f;
+    private static final float NAV_H = 54.5f;
     private static final float TOTAL_H = CANDIDATE_H + ROW_H * 4f + NAV_H;
 
     private static final float KEY_MARGIN_X = 2.25f;
@@ -172,7 +172,7 @@ final class KeyboardPreviewView extends View {
         float row3 = row2 + ROW_H;
         drawWeightedKeyRow(
                 canvas,
-                new String[] {"⇧","Z","X","C","V","B","N","M","⌫"},
+                new String[] {"分词","Z","X","C","V","B","N","M","⌫"},
                 new String[] {"","@",".","#","、","？","！","…",""},
                 new float[] {15,10,10,10,10,10,10,10,15},
                 row3,
@@ -193,28 +193,38 @@ final class KeyboardPreviewView extends View {
     }
 
     private void drawCandidateBar(Canvas canvas, float sx, float sy, int candidate) {
-        float cy = 0f;
-        float h = CANDIDATE_H * sy;
+        // The real composing state is two-tiered: ~1/3 pinyin text, ~2/3 candidates.
+        // Measured on the Ace 3V: keyboard top ~1700px, candidate keys start ~1760px,
+        // first alphabet row starts ~1880px. This maps closely to 19 + 38 skin units.
+        final float pinyinH = 19f;
+        final float candidateRowTop = pinyinH;
+
+        drawText(canvas, "ni'hao", 5f * sx, 14.5f * sy, onSurface, 12.5f * sx, false);
 
         if (highlightCandidate) {
-            rect.set(5f * sx, 8f * sy, 62f * sx, 49f * sy);
+            rect.set(4f * sx, 22f * sy, 61f * sx, 54f * sy);
             fillRound(canvas, rect, candidate, 8f * sx);
         }
-
-        drawText(canvas, "你好", 17f * sx, 35f * sy,
+        drawText(canvas, "你好", 13f * sx, 46.5f * sy,
                 highlightCandidate ? primary : onSurface, 17f * sx, true);
-        drawText(canvas, "你号", 76f * sx, 35f * sy, onSurface, 17f * sx, false);
-        drawText(canvas, "拟好", 134f * sx, 35f * sy, onSurface, 17f * sx, false);
-        drawText(canvas, "有点", 191f * sx, 35f * sy, onSurfaceVariant, 16f * sx, false);
 
-        // candidate close divider + X, matching the typing candidate bar structure
+        // Doubao inserts emoji / kaomoji suggestions between regular word candidates.
+        drawText(canvas, "👋", 72f * sx, 46f * sy, onSurface, 16f * sx, false);
+        drawText(canvas, "ヾ(=^▽^=)ノ", 112f * sx, 46f * sy, onSurface, 12.5f * sx, false);
+        drawText(canvas, "你号", 255f * sx, 46.5f * sy, onSurface, 17f * sx, false);
+
+        // More-candidate divider + down chevron at the right edge.
         paint.setStrokeWidth(Math.max(1f, 0.65f * sx));
         paint.setColor(withAlpha(onSurfaceVariant, 0.32f));
-        canvas.drawLine(326f * sx, 11f * sy, 326f * sx, 46f * sy, paint);
+        canvas.drawLine(326f * sx, 23f * sy, 326f * sx, 52f * sy, paint);
+        paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(Math.max(1.4f, 1.1f * sx));
+        paint.setStrokeCap(Paint.Cap.ROUND);
         paint.setColor(onSurfaceVariant);
-        canvas.drawLine(338f * sx, 20f * sy, 347f * sx, 29f * sy, paint);
-        canvas.drawLine(347f * sx, 20f * sy, 338f * sx, 29f * sy, paint);
+        canvas.drawLine(335f * sx, 37f * sy, 340f * sx, 42f * sy, paint);
+        canvas.drawLine(340f * sx, 42f * sy, 345f * sx, 37f * sy, paint);
+        paint.setStyle(Paint.Style.FILL);
+        paint.setStrokeCap(Paint.Cap.BUTT);
     }
 
     private void drawWeightedKeyRow(
@@ -320,7 +330,7 @@ final class KeyboardPreviewView extends View {
                     drawCnEn(canvas, rect, sx, sy);
                     break;
                 case 4:
-                    centerText(canvas, "换行", rect,
+                    centerText(canvas, "确定", rect,
                             highlightAction ? onPrimary : onSurface, 14f * sx, false);
                     break;
                 default:

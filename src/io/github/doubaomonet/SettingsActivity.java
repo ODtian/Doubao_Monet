@@ -344,8 +344,10 @@ public final class SettingsActivity extends Activity {
         new Thread(() -> {
             boolean ok = false;
             try {
+                String command = "am force-stop " + TARGET_PACKAGE
+                        + "; sleep 0.2; ime set " + TARGET_PACKAGE + "/.ImeService";
                 Process process = new ProcessBuilder(
-                        "su", "-c", "am force-stop " + TARGET_PACKAGE).redirectErrorStream(true).start();
+                        "su", "-c", command).redirectErrorStream(true).start();
                 ok = process.waitFor() == 0;
             } catch (Throwable ignored) {
             }
