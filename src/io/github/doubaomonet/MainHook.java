@@ -79,7 +79,7 @@ public final class MainHook implements IXposedHookLoadPackage {
     }
 
     private static Integer overrideColor(Resources resources, int id, Context context) {
-        HookConfig.Snapshot config = HookConfig.load();
+        HookConfig.Snapshot config = HookConfig.current();
         if (!config.enabled) return null;
         try {
             String entry = resources.getResourceEntryName(id);
@@ -103,7 +103,7 @@ public final class MainHook implements IXposedHookLoadPackage {
     private static void applyImeNavigation(Object service) {
         if (!(service instanceof Context)) return;
         Context context = (Context) service;
-        HookConfig.Snapshot config = HookConfig.load();
+        HookConfig.Snapshot config = HookConfig.current();
         if (!config.enabled || !config.syncSystemNav) return;
 
         try {
@@ -150,6 +150,7 @@ public final class MainHook implements IXposedHookLoadPackage {
             XC_MethodHook callback = new XC_MethodHook() {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) {
+                    HookConfig.refresh();
                     applyImeNavigation(param.thisObject);
                 }
             };
@@ -230,7 +231,7 @@ public final class MainHook implements IXposedHookLoadPackage {
                     new XC_MethodHook() {
                         @Override
                         protected void beforeHookedMethod(MethodHookParam param) {
-                            HookConfig.Snapshot config = HookConfig.load();
+                            HookConfig.Snapshot config = HookConfig.current();
                             if (!config.enabled || !config.syncSystemNav) return;
                             if (param.args == null || param.args.length != 1) return;
                             if (!(param.args[0] instanceof Integer) || !(param.thisObject instanceof Context)) return;
@@ -284,6 +285,7 @@ public final class MainHook implements IXposedHookLoadPackage {
     public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lpparam) {
         if (!TARGET.equals(lpparam.packageName)) return;
         info("package loaded, process=" + lpparam.processName);
+        HookConfig.refresh();
         installColorStateHooks(lpparam.classLoader);
         installAppSurfaceHooks(lpparam.classLoader);
         installImeWindowHooks();
@@ -301,7 +303,7 @@ public final class MainHook implements IXposedHookLoadPackage {
                         @Override
                         protected void afterHookedMethod(MethodHookParam param) {
                             try {
-                                HookConfig.Snapshot config = HookConfig.load();
+                                HookConfig.Snapshot config = HookConfig.refresh();
                                 if (!config.enabled) return;
 
                                 Object raw = param.getResult();
@@ -353,4 +355,5 @@ public final class MainHook implements IXposedHookLoadPackage {
         }
     }
 }
+
 

@@ -38,23 +38,30 @@ final class HookConfig {
     }
 
     private static XSharedPreferences prefs;
+    private static volatile Snapshot cached;
 
-    static synchronized Snapshot load() {
+    static Snapshot current() {
+        Snapshot value = cached;
+        return value != null ? value : refresh();
+    }
+
+    static synchronized Snapshot refresh() {
         try {
             if (prefs == null) {
                 prefs = new XSharedPreferences(PACKAGE, FILE);
             } else {
                 prefs.reload();
             }
-            return new Snapshot(
+            cached = new Snapshot(
                     prefs.getBoolean("enabled", true),
                     prefs.getBoolean("sync_system_nav", true),
                     prefs.getBoolean("tinted_letter_keys", false),
                     prefs.getBoolean("highlight_first_candidate", true),
                     prefs.getBoolean("highlight_action_key", false));
         } catch (Throwable ignored) {
-            return defaults();
+            cached = defaults();
         }
+        return cached;
     }
 
     static Snapshot defaults() {
