@@ -285,13 +285,13 @@ public final class SettingsActivity extends Activity {
         LinearLayout card = newCard();
         preview = new KeyboardPreviewView(this, prefs);
         LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(238));
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         previewParams.leftMargin = dp(8);
         previewParams.rightMargin = dp(8);
         previewParams.topMargin = dp(8);
         card.addView(preview, previewParams);
 
-        TextView hint = bodyText("预览会跟随滑杆实时变化；它模拟候选栏、键帽、功能键和底部区域。", 12.2f, 0.62f);
+        TextView hint = bodyText("预览按豆包 1.4.5 真实 26 键比例绘制，并跟随滑杆实时变化。", 12.2f, 0.62f);
         LinearLayout.LayoutParams hintParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         hintParams.leftMargin = dp(14);
