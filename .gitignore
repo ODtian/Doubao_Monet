@@ -1,0 +1,9 @@
+build/
+signing/
+*.jks
+*.keystore
+*.idsig
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
