@@ -1,15 +1,16 @@
 package io.github.doubaomonet;
 
 import android.app.Activity;
-import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.res.ColorStateList;
 import android.content.res.Configuration;
 import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Switch;
@@ -18,192 +19,348 @@ import android.widget.TextView;
 public final class SettingsActivity extends Activity {
     private SharedPreferences prefs;
     private LinearLayout root;
+    private boolean night;
+    private int surface;
+    private int surfaceLow;
+    private int surfaceContainer;
+    private int onSurface;
+    private int onSurfaceVariant;
+    private int primary;
+    private int primaryContainer;
+    private int onPrimaryContainer;
+    private int outlineVariant;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        boolean night = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
+        night = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
                 == Configuration.UI_MODE_NIGHT_YES;
-        setTheme(night ? android.R.style.Theme_Material_NoActionBar : android.R.style.Theme_Material_Light_NoActionBar);
+        setTheme(night
+                ? android.R.style.Theme_Material_NoActionBar
+                : android.R.style.Theme_Material_Light_NoActionBar);
         super.onCreate(savedInstanceState);
 
         prefs = getSharedPreferences(HookConfig.FILE, MODE_PRIVATE);
+        loadColors();
+        getWindow().setStatusBarColor(surface);
+        getWindow().setNavigationBarColor(surface);
+        if (!night) {
+            getWindow().getDecorView().setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+        }
 
         ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setBackgroundColor(surface);
+
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(24), dp(22), dp(24), dp(36));
-        root.setBackgroundColor(systemColor(
-                night ? "system_surface_dark" : "system_surface_light",
-                night ? 0xff111318 : 0xfff9f9ff));
+        root.setPadding(dp(20), dp(18), dp(20), dp(32));
         scroll.addView(root, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
         setContentView(scroll);
 
-        addTitle("Doubao Monet");
-        addBody("豆包输入法 Material You / Monet 动态配色模块");
-        addPalettePreview(night);
-
-        addSection("模块");
-        addSwitch(
-                "启用模块",
-                "关闭后需要重启豆包输入法进程才能完全恢复原始配色。",
+        addHeader();
+        addPaletteCard();
+        addSectionTitle("外观");
+        LinearLayout appearance = newCard();
+        addSwitchRow(appearance,
+                "启用 Monet 配色",
+                "关闭后恢复豆包原始配色，重新创建键盘后生效。",
                 "enabled",
-                true);
-        addSwitch(
-                "统一键盘与底部导航区",
-                "让键盘主体、候选栏和最下方收起键盘/地球区域使用同一 Monet surface。",
+                true,
+                false);
+        addDivider(appearance);
+        addSwitchRow(appearance,
+                "底部区域跟随键盘",
+                "统一候选栏、键盘主体和底部导航区域。",
                 "sync_system_nav",
-                true);
-
-        addSection("键盘元素");
-        addSwitch(
-                "普通字母键轻微染色",
-                "默认保留接近白色的 Material 键帽；开启后字母键也会带一点壁纸色。",
+                true,
+                false);
+        addDivider(appearance);
+        addSwitchRow(appearance,
+                "字母键增强染色",
+                "默认只有很轻的壁纸色；开启后更明显。",
                 "tinted_letter_keys",
+                false,
                 false);
-        addSwitch(
-                "首候选使用 Monet 强调色",
-                "替换豆包固定的 #4F84FF 首候选蓝，并同步拼音高亮色。",
+        root.addView(appearance, cardParams());
+
+        addSectionTitle("候选与动作键");
+        LinearLayout behavior = newCard();
+        addSwitchRow(behavior,
+                "首候选使用强调色",
+                "替换豆包固定蓝色，并让首候选背景更柔和。",
                 "highlight_first_candidate",
-                true);
-        addSwitch(
-                "突出搜索 / 确定键",
-                "关闭时搜索、确定、换行等动作键统一使用功能键容器色；开启后搜索/确定使用 Monet primary。",
-                "highlight_action_key",
+                true,
                 false);
+        addDivider(behavior);
+        addSwitchRow(behavior,
+                "突出搜索 / 确定键",
+                "默认与其它功能键同色；开启后使用更明显的强调色。",
+                "highlight_action_key",
+                false,
+                false);
+        root.addView(behavior, cardParams());
 
-        addSection("应用设置");
-        addBody("颜色资源会在键盘重新创建时刷新。修改设置后，收起再重新唤起键盘；若某项仍未刷新，强行停止一次豆包输入法即可。动态色本身会跟随系统壁纸变化。");
-
-        Button reset = new Button(this);
-        reset.setAllCaps(false);
+        addSectionTitle("应用");
+        TextView reset = new TextView(this);
         reset.setText("恢复默认设置");
+        reset.setTextSize(15);
+        reset.setGravity(Gravity.CENTER);
+        reset.setTextColor(onPrimaryContainer);
+        reset.setBackground(roundRect(primaryContainer, 18));
+        reset.setPadding(dp(18), dp(14), dp(18), dp(14));
+        reset.setClickable(true);
+        reset.setFocusable(true);
         reset.setOnClickListener(v -> {
             prefs.edit().clear().apply();
             recreate();
         });
-        LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(52));
-        rp.topMargin = dp(16);
-        root.addView(reset, rp);
-
-        TextView footer = new TextView(this);
-        footer.setText("测试环境：豆包输入法 1.4.5 · Android 16 · Vector / Xposed compatible");
-        footer.setTextSize(12);
-        footer.setAlpha(0.58f);
-        LinearLayout.LayoutParams fp = new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams resetParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        fp.topMargin = dp(22);
-        root.addView(footer, fp);
+        resetParams.topMargin = dp(2);
+        root.addView(reset, resetParams);
+
+        TextView footer = bodyText(
+                "修改后收起并重新唤起键盘即可刷新；少数界面需要重启一次豆包输入法。\n"
+                        + "适配：豆包输入法 1.4.5 · Android 12+ · Vector / Xposed compatible",
+                12.2f,
+                0.68f);
+        LinearLayout.LayoutParams footerParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        footerParams.topMargin = dp(18);
+        root.addView(footer, footerParams);
     }
 
-    private void addTitle(String text) {
-        TextView v = new TextView(this);
-        v.setText(text);
-        v.setTextSize(30);
-        v.setTypeface(v.getTypeface(), android.graphics.Typeface.BOLD);
-        root.addView(v);
+    private void loadColors() {
+        surface = systemColor(night ? "system_surface_dark" : "system_surface_light",
+                night ? 0xff111318 : 0xfff9f9ff);
+        surfaceLow = systemColor(night ? "system_surface_container_low_dark" : "system_surface_container_low_light",
+                night ? 0xff1b1c20 : 0xfff3f3f9);
+        surfaceContainer = systemColor(night ? "system_surface_container_dark" : "system_surface_container_light",
+                night ? 0xff1f2024 : 0xffe7e8ee);
+        onSurface = systemColor(night ? "system_on_surface_dark" : "system_on_surface_light",
+                night ? 0xffe3e2e8 : 0xff1b1c20);
+        onSurfaceVariant = systemColor(night ? "system_on_surface_variant_dark" : "system_on_surface_variant_light",
+                night ? 0xffc4c7cf : 0xff44474e);
+        primary = systemColor(night ? "system_primary_dark" : "system_primary_light",
+                night ? 0xffaac7ff : 0xff415f91);
+        primaryContainer = systemColor(night ? "system_primary_container_dark" : "system_primary_container_light",
+                night ? 0xff284777 : 0xffd6e3ff);
+        onPrimaryContainer = systemColor(night ? "system_on_primary_container_dark" : "system_on_primary_container_light",
+                night ? 0xffd6e3ff : 0xff001b3e);
+        outlineVariant = systemColor(night ? "system_outline_variant_dark" : "system_outline_variant_light",
+                night ? 0xff44474e : 0xffc4c7cf);
     }
 
-    private void addSection(String text) {
+    private void addHeader() {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+
+        LinearLayout textBlock = new LinearLayout(this);
+        textBlock.setOrientation(LinearLayout.VERTICAL);
+        TextView title = new TextView(this);
+        title.setText("Doubao Monet");
+        title.setTextColor(onSurface);
+        title.setTextSize(27);
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        textBlock.addView(title);
+
+        TextView subtitle = bodyText("让豆包输入法跟随系统 Material You 动态色", 13.5f, 0.78f);
+        LinearLayout.LayoutParams subtitleParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        subtitleParams.topMargin = dp(2);
+        textBlock.addView(subtitle, subtitleParams);
+
+        row.addView(textBlock, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView version = new TextView(this);
+        version.setText("0.3.0");
+        version.setTextSize(12);
+        version.setTextColor(onPrimaryContainer);
+        version.setGravity(Gravity.CENTER);
+        version.setPadding(dp(12), dp(7), dp(12), dp(7));
+        version.setBackground(roundRect(primaryContainer, 999));
+        row.addView(version);
+
+        root.addView(row);
+    }
+
+    private void addPaletteCard() {
+        LinearLayout card = newCard();
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+
+        LinearLayout dots = new LinearLayout(this);
+        dots.setOrientation(LinearLayout.HORIZONTAL);
+        dots.addView(colorDot(primary));
+        LinearLayout.LayoutParams secondDot = new LinearLayout.LayoutParams(dp(30), dp(30));
+        secondDot.leftMargin = -dp(6);
+        View surfaceDot = colorDot(surfaceContainer);
+        dots.addView(surfaceDot, secondDot);
+        LinearLayout.LayoutParams thirdDot = new LinearLayout.LayoutParams(dp(30), dp(30));
+        thirdDot.leftMargin = -dp(6);
+        View functionDot = colorDot(blend(surfaceContainer, primary, 0.10f));
+        dots.addView(functionDot, thirdDot);
+        card.addView(dots);
+
+        LinearLayout textBlock = new LinearLayout(this);
+        textBlock.setOrientation(LinearLayout.VERTICAL);
+        TextView title = bodyText("当前动态色", 15.2f, 1f);
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        textBlock.addView(title);
+        TextView sub = bodyText("直接读取 Android framework 的 Monet 色板", 12.5f, 0.68f);
+        LinearLayout.LayoutParams subParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        subParams.topMargin = dp(2);
+        textBlock.addView(sub, subParams);
+
+        LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1f);
+        textParams.leftMargin = dp(14);
+        card.addView(textBlock, textParams);
+
+        LinearLayout.LayoutParams params = cardParams();
+        params.topMargin = dp(18);
+        root.addView(card, params);
+    }
+
+    private void addSectionTitle(String text) {
         TextView v = new TextView(this);
         v.setText(text);
-        v.setTextSize(15);
-        v.setTypeface(v.getTypeface(), android.graphics.Typeface.BOLD);
-        v.setAlpha(0.72f);
+        v.setTextSize(13.2f);
+        v.setTextColor(onSurfaceVariant);
+        v.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.topMargin = dp(26);
+        lp.topMargin = dp(24);
         lp.bottomMargin = dp(8);
         root.addView(v, lp);
     }
 
-    private void addBody(String text) {
-        TextView v = new TextView(this);
-        v.setText(text);
-        v.setTextSize(14);
-        v.setLineSpacing(0f, 1.18f);
-        v.setAlpha(0.70f);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.topMargin = dp(6);
-        root.addView(v, lp);
+    private LinearLayout newCard() {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(4), dp(4), dp(4), dp(4));
+        card.setBackground(roundRect(surfaceLow, 22));
+        card.setElevation(dp(1));
+        return card;
     }
 
-    private void addPalettePreview(boolean night) {
+    private LinearLayout.LayoutParams cardParams() {
+        return new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+    }
+
+    private void addSwitchRow(
+            LinearLayout parent,
+            String title,
+            String summary,
+            String key,
+            boolean defaultValue,
+            boolean disabled) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(16), dp(14), dp(16), dp(14));
-        int surface = systemColor(
-                night ? "system_surface_container_dark" : "system_surface_container_light",
-                night ? 0xff1f2024 : 0xffe7e8ee);
-        row.setBackgroundColor(surface);
+        row.setPadding(dp(14), dp(12), dp(10), dp(12));
 
-        View primary = new View(this);
-        int pc = systemColor(
-                night ? "system_primary_dark" : "system_primary_light",
-                night ? 0xffaac7ff : 0xff415f91);
-        primary.setBackgroundColor(pc);
-        row.addView(primary, new LinearLayout.LayoutParams(dp(42), dp(42)));
-
-        TextView label = new TextView(this);
-        label.setText("当前系统动态色\n键盘会直接读取 Android framework Monet palette");
-        label.setTextSize(13);
-        label.setLineSpacing(0f, 1.15f);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        lp.leftMargin = dp(14);
-        row.addView(label, lp);
-
-        LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(
+        LinearLayout labels = new LinearLayout(this);
+        labels.setOrientation(LinearLayout.VERTICAL);
+        TextView titleView = bodyText(title, 15.2f, disabled ? 0.45f : 1f);
+        titleView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        labels.addView(titleView);
+        TextView summaryView = bodyText(summary, 12.2f, disabled ? 0.35f : 0.62f);
+        LinearLayout.LayoutParams summaryParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        rp.topMargin = dp(18);
-        root.addView(row, rp);
-    }
-
-    private void addSwitch(String title, String summary, String key, boolean defaultValue) {
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(16), dp(12), dp(10), dp(12));
-
-        LinearLayout line = new LinearLayout(this);
-        line.setOrientation(LinearLayout.HORIZONTAL);
-        line.setGravity(Gravity.CENTER_VERTICAL);
-
-        TextView text = new TextView(this);
-        text.setText(title);
-        text.setTextSize(16);
-        line.addView(text, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        summaryParams.topMargin = dp(3);
+        labels.addView(summaryView, summaryParams);
+        row.addView(labels, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
         Switch toggle = new Switch(this);
+        toggle.setShowText(false);
         toggle.setChecked(prefs.getBoolean(key, defaultValue));
+        toggle.setEnabled(!disabled);
+        tintSwitch(toggle);
         toggle.setOnCheckedChangeListener((buttonView, isChecked) ->
                 prefs.edit().putBoolean(key, isChecked).apply());
-        line.addView(toggle);
-        box.addView(line);
-
-        TextView sub = new TextView(this);
-        sub.setText(summary);
-        sub.setTextSize(12.5f);
-        sub.setAlpha(0.62f);
-        sub.setLineSpacing(0f, 1.12f);
-        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
+        LinearLayout.LayoutParams toggleParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        sp.topMargin = dp(4);
-        box.addView(sub, sp);
+        toggleParams.leftMargin = dp(8);
+        row.addView(toggle, toggleParams);
 
-        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(
+        row.setOnClickListener(v -> {
+            if (toggle.isEnabled()) toggle.toggle();
+        });
+        parent.addView(row);
+    }
+
+    private void addDivider(LinearLayout parent) {
+        View divider = new View(this);
+        divider.setBackgroundColor(withAlpha(outlineVariant, night ? 0.42f : 0.55f));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT);
-        bp.topMargin = dp(4);
-        root.addView(box, bp);
+                dp(1));
+        lp.leftMargin = dp(16);
+        lp.rightMargin = dp(16);
+        parent.addView(divider, lp);
+    }
+
+    private void tintSwitch(Switch toggle) {
+        int[][] states = new int[][] {
+                new int[] { android.R.attr.state_checked },
+                new int[] {}
+        };
+        toggle.setThumbTintList(new ColorStateList(
+                states,
+                new int[] { primary, onSurfaceVariant }));
+        toggle.setTrackTintList(new ColorStateList(
+                states,
+                new int[] { withAlpha(primary, 0.42f), withAlpha(onSurfaceVariant, 0.20f) }));
+    }
+
+    private TextView bodyText(String text, float size, float alpha) {
+        TextView v = new TextView(this);
+        v.setText(text);
+        v.setTextSize(size);
+        v.setTextColor(onSurface);
+        v.setAlpha(alpha);
+        v.setLineSpacing(0f, 1.12f);
+        return v;
+    }
+
+    private View colorDot(int color) {
+        View v = new View(this);
+        v.setBackground(oval(color));
+        v.setElevation(dp(2));
+        v.setLayoutParams(new LinearLayout.LayoutParams(dp(30), dp(30)));
+        return v;
+    }
+
+    private GradientDrawable roundRect(int color, int radiusDp) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(color);
+        d.setCornerRadius(dp(radiusDp));
+        return d;
+    }
+
+    private GradientDrawable oval(int color) {
+        GradientDrawable d = new GradientDrawable();
+        d.setShape(GradientDrawable.OVAL);
+        d.setColor(color);
+        d.setStroke(dp(1), withAlpha(outlineVariant, 0.65f));
+        return d;
     }
 
     private int systemColor(String name, int fallback) {
@@ -214,6 +371,22 @@ public final class SettingsActivity extends Activity {
         } catch (Throwable ignored) {
             return fallback;
         }
+    }
+
+    private int blend(int base, int tint, float amount) {
+        float a = Math.max(0f, Math.min(1f, amount));
+        return Color.rgb(
+                Math.round(Color.red(base) * (1f - a) + Color.red(tint) * a),
+                Math.round(Color.green(base) * (1f - a) + Color.green(tint) * a),
+                Math.round(Color.blue(base) * (1f - a) + Color.blue(tint) * a));
+    }
+
+    private int withAlpha(int color, float alpha) {
+        return Color.argb(
+                Math.round(255f * alpha),
+                Color.red(color),
+                Color.green(color),
+                Color.blue(color));
     }
 
     private int dp(int value) {

@@ -3,6 +3,8 @@ package io.github.doubaomonet;
 import android.content.Context;
 import android.content.res.AssetManager;
 import android.content.res.Resources;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.util.Log;
 import android.view.View;
@@ -78,6 +80,32 @@ public final class MainHook implements IXposedHookLoadPackage {
         }
     }
 
+    private static Drawable overrideDrawable(Resources resources, int id, Context context) {
+        HookConfig.Snapshot config = HookConfig.current();
+        if (!config.enabled) return null;
+        try {
+            String entry = resources.getResourceEntryName(id);
+            if ("bg_candidate_item_highlighted".equals(entry)) {
+                return roundedDrawable(context, MonetSkin.candidateBackground(context), 6f);
+            }
+            if ("bg_candidate_item_pressed".equals(entry)) {
+                return roundedDrawable(context, MonetSkin.functionKeyPressedSurface(context), 6f);
+            }
+            if ("bg_more_candidate_segment_selected".equals(entry)) {
+                return roundedDrawable(context, MonetSkin.candidateBackground(context), 24f);
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    private static GradientDrawable roundedDrawable(Context context, int color, float radiusDp) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(color);
+        drawable.setCornerRadius(radiusDp * context.getResources().getDisplayMetrics().density);
+        return drawable;
+    }
+
     private static Integer overrideColor(Resources resources, int id, Context context) {
         HookConfig.Snapshot config = HookConfig.current();
         if (!config.enabled) return null;
@@ -85,6 +113,49 @@ public final class MainHook implements IXposedHookLoadPackage {
             String entry = resources.getResourceEntryName(id);
             if ("navigation_bar_normal".equals(entry)) {
                 return MonetSkin.keyboardSurface(context);
+            }
+            if ("ime_keyboard_candidate_font_bg".equals(entry)
+                    || "ime_keyboard_candidate_text_bg".equals(entry)
+                    || "candidate_item_text_bg".equals(entry)
+                    || "candidate_tip_background".equals(entry)
+                    || "more_candidate_segment_selected_bg".equals(entry)
+                    || "more_candidate_syllable_selected_bg".equals(entry)
+                    || "more_candidate_item_pressed".equals(entry)) {
+                return MonetSkin.candidateBackground(context);
+            }
+            if ("more_candidate_panel_bg".equals(entry)
+                    || "more_candidate_content_bg".equals(entry)) {
+                return MonetSkin.keyboardSurface(context);
+            }
+            if ("more_candidate_delete_bg".equals(entry)) {
+                return MonetSkin.functionKeySurface(context);
+            }
+            if ("ime_key_normal_bg_color".equals(entry)) {
+                return MonetSkin.letterKeySurface(context, config.tintedLetterKeys);
+            }
+            if ("ime_key_normal_press_bg_color".equals(entry)) {
+                return MonetSkin.functionKeyPressedSurface(context);
+            }
+            if ("ime_key_gray_clickable_bg_color".equals(entry)
+                    || "ime_key_gray_un_clickable_bg_color".equals(entry)) {
+                return MonetSkin.functionKeySurface(context);
+            }
+            if ("ime_key_gray_clickable_press_bg_color".equals(entry)
+                    || "ime_key_gray_un_clickable_press_bg_color".equals(entry)) {
+                return MonetSkin.functionKeyPressedSurface(context);
+            }
+            if ("ime_key_blue_clickable_bg_color".equals(entry)) {
+                return config.highlightActionKey
+                        ? MonetSkin.primary(context)
+                        : MonetSkin.functionKeySurface(context);
+            }
+            if ("ime_key_blue_clickable_press_bg_color".equals(entry)) {
+                return MonetSkin.functionKeyPressedSurface(context);
+            }
+            if ("ime_keyboard_iv_bg_color".equals(entry)
+                    || "ime_toolbar_clipboard_bg_color".equals(entry)
+                    || "ime_toolbar_tips_bg_color".equals(entry)) {
+                return MonetSkin.candidateBackground(context);
             }
             if (config.highlightFirstCandidate) {
                 if ("candidate_item_text_highlighted".equals(entry)
@@ -203,6 +274,45 @@ public final class MainHook implements IXposedHookLoadPackage {
                         }
                     });
 
+            Set<?> contextDrawableHooks = XposedBridge.hookAllMethods(
+                    Context.class,
+                    "getDrawable",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            if (!(param.thisObject instanceof Context)
+                                    || param.args == null
+                                    || param.args.length != 1
+                                    || !(param.args[0] instanceof Integer)) return;
+                            Context context = (Context) param.thisObject;
+                            Drawable value = overrideDrawable(
+                                    context.getResources(),
+                                    (Integer) param.args[0],
+                                    context);
+                            if (value != null) param.setResult(value);
+                        }
+                    });
+
+            Set<?> resourceDrawableHooks = XposedBridge.hookAllMethods(
+                    Resources.class,
+                    "getDrawable",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            if (!(param.thisObject instanceof Resources)
+                                    || param.args == null
+                                    || param.args.length < 1
+                                    || !(param.args[0] instanceof Integer)) return;
+                            Context context = currentAppContext();
+                            if (context == null) return;
+                            Drawable value = overrideDrawable(
+                                    (Resources) param.thisObject,
+                                    (Integer) param.args[0],
+                                    context);
+                            if (value != null) param.setResult(value);
+                        }
+                    });
+
             Set<?> resourceHooks = XposedBridge.hookAllMethods(
                     Resources.class,
                     "getColor",
@@ -240,6 +350,7 @@ public final class MainHook implements IXposedHookLoadPackage {
                     });
             info("surface hooks installed="
                     + compatHooks.size() + "/" + contextHooks.size() + "/"
+                    + contextDrawableHooks.size() + "/" + resourceDrawableHooks.size() + "/"
                     + resourceHooks.size() + "/" + navHooks.size());
         } catch (Throwable t) {
             error("surface hook install failed", t);

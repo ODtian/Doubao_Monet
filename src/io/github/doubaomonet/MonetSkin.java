@@ -30,7 +30,7 @@ final class MonetSkin {
 
     static Result build(Context context, AssetManager source, HookConfig.Snapshot config) throws Exception {
         Palette p = Palette.read(context.getResources());
-        String key = "v4_" + p.key() + "_" + config.key();
+        String key = "v5_" + p.key() + "_" + config.key();
         File dir = new File(context.getCodeCacheDir(), "doubao_monet");
         if (!dir.exists() && !dir.mkdirs() && !dir.isDirectory()) {
             throw new IllegalStateException("Cannot create " + dir);
@@ -76,6 +76,46 @@ final class MonetSkin {
                 Color.red(color),
                 Color.green(color),
                 Color.blue(color));
+    }
+
+    static int candidateBackground(Context context) {
+        Palette p = Palette.read(context.getResources());
+        if (isNight(context.getResources())) {
+            return mix(p.surfaceContainerDark, p.primaryDark, 0.08f);
+        }
+        return mix(p.surfaceContainer, p.primary, 0.055f);
+    }
+
+    static int functionKeySurface(Context context) {
+        Palette p = Palette.read(context.getResources());
+        if (isNight(context.getResources())) {
+            return mix(p.surfaceContainerDark, p.primaryDark, 0.10f);
+        }
+        return mix(p.surfaceContainer, p.primary, 0.10f);
+    }
+
+    static int letterKeySurface(Context context, boolean stronger) {
+        Palette p = Palette.read(context.getResources());
+        if (isNight(context.getResources())) {
+            return mix(p.surfaceHighestDark, p.primaryDark, stronger ? 0.10f : 0.045f);
+        }
+        return mix(p.surfaceLowest, p.primary, stronger ? 0.10f : 0.04f);
+    }
+
+    static int functionKeyPressedSurface(Context context) {
+        Palette p = Palette.read(context.getResources());
+        if (isNight(context.getResources())) {
+            return mix(p.surfaceContainerDark, p.primaryDark, 0.18f);
+        }
+        return mix(p.surfaceContainer, p.primary, 0.18f);
+    }
+
+    private static int mix(int base, int tint, float amount) {
+        float a = Math.max(0f, Math.min(1f, amount));
+        return Color.rgb(
+                Math.round(Color.red(base) * (1f - a) + Color.red(tint) * a),
+                Math.round(Color.green(base) * (1f - a) + Color.green(tint) * a),
+                Math.round(Color.blue(base) * (1f - a) + Color.blue(tint) * a));
     }
 
     static boolean useLightNavigationIcons(Context context) {
@@ -124,12 +164,14 @@ final class MonetSkin {
                 "morecands_filter_container_bk",
                 "setting_button_bk",
                 "morecands_button_bk");
-        int letterKey = config.tintedLetterKeys ? p.surfaceLow : p.surfaceLowest;
+        int letterKey = mix(p.surfaceLowest, p.primary, config.tintedLetterKeys ? 0.10f : 0.04f);
         put(m, letterKey,
                 "keybutton_bk",
                 "keybutton_back");
 
-        put(m, p.secondaryContainer,
+        int functionKey = mix(p.surfaceContainer, p.primary, 0.10f);
+        int functionKeyPressed = mix(p.surfaceContainer, p.primary, 0.18f);
+        put(m, functionKey,
                 "keybutton_func_bk",
                 "toolbar_idle_button_pushedbk",
                 "setting_button_pushedbk",
@@ -137,10 +179,12 @@ final class MonetSkin {
         put(m, p.surfaceHigh,
                 "keybutton_pushed_bk",
                 "canditem_pushedbk");
-        put(m, p.primaryContainer,
+        put(m, functionKeyPressed,
                 "keybutton_func_pushed_bk",
                 "action_button_pushedbk");
-        m.put("canditem_selectedbk", config.highlightFirstCandidate ? p.primaryContainer : p.surfaceHigh);
+        m.put("canditem_selectedbk", config.highlightFirstCandidate
+                ? mix(p.surfaceContainer, p.primary, 0.08f)
+                : p.surfaceHigh);
 
         put(m, p.outlineVariant,
                 "canditem_split",
@@ -193,12 +237,14 @@ final class MonetSkin {
                 "morecands_filter_container_bk",
                 "setting_button_bk",
                 "morecands_button_bk");
-        int letterKey = config.tintedLetterKeys ? p.surfaceHighDark : p.surfaceHighestDark;
+        int letterKey = mix(p.surfaceHighestDark, p.primaryDark, config.tintedLetterKeys ? 0.10f : 0.045f);
         put(m, letterKey,
                 "keybutton_bk",
                 "keybutton_back");
 
-        put(m, p.secondaryContainerDark,
+        int functionKey = mix(p.surfaceContainerDark, p.primaryDark, 0.10f);
+        int functionKeyPressed = mix(p.surfaceContainerDark, p.primaryDark, 0.18f);
+        put(m, functionKey,
                 "keybutton_func_bk",
                 "toolbar_idle_button_pushedbk",
                 "setting_button_pushedbk",
@@ -206,10 +252,12 @@ final class MonetSkin {
         put(m, p.surfaceHighDark,
                 "keybutton_pushed_bk",
                 "canditem_pushedbk");
-        put(m, p.primaryContainerDark,
+        put(m, functionKeyPressed,
                 "keybutton_func_pushed_bk",
                 "action_button_pushedbk");
-        m.put("canditem_selectedbk", config.highlightFirstCandidate ? p.primaryContainerDark : p.surfaceHighDark);
+        m.put("canditem_selectedbk", config.highlightFirstCandidate
+                ? mix(p.surfaceContainerDark, p.primaryDark, 0.10f)
+                : p.surfaceHighDark);
 
         put(m, p.outlineVariantDark,
                 "canditem_split",

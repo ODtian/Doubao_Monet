@@ -20,7 +20,7 @@
 - 直接读取 Android framework 的 Monet 动态色，而不是自行计算壁纸色
 - 浅色 / 深色模式独立映射
 - 键盘主体、候选栏和底部导航区统一 surface
-- 普通字母键、功能键、按下态使用不同 Material 容器层级
+- 普通字母键、功能键、按下态使用 surface 与 Monet primary 的轻量混色，避免纯白 / 高饱和蓝块
 - 首候选固定 `#4F84FF` 改为系统 Monet primary
 - 中文首候选拼音高亮同步 Monet primary
 - 搜索 / 确定 / 换行键默认统一为功能键容器色
@@ -32,13 +32,13 @@
 | 豆包元素 | Material / Monet token |
 | --- | --- |
 | 键盘主体 / 候选栏 | `system_surface_container_*` |
-| 普通字母键 | `system_surface_container_lowest_light` / `system_surface_container_highest_dark` |
-| 功能键 | `system_secondary_container_*` |
-| 功能键按下态 | `system_primary_container_*` |
+| 普通字母键 | surface 与 primary 约 4% 混色（可增强到约 10%） |
+| 功能键 | `surface_container` 与 primary 约 10% 混色 |
+| 功能键按下态 | `surface_container` 与 primary 约 18% 混色 |
 | 主文字 | `system_on_surface_*` |
 | 次文字 / 拼音 | `system_on_surface_variant_*` |
 | 首候选强调文字 | `system_primary_*` |
-| 首候选选中背景 | `system_primary_container_*` |
+| 首候选背景 | `surface_container` 与 primary 约 6–10% 混色 |
 | 分隔线 | `system_outline_variant_*` |
 | 底部导航区 | 与键盘主体相同的 surface |
 
@@ -60,7 +60,7 @@
 
 - **启用模块**：关闭后需重启豆包输入法进程以完全恢复原始资源
 - **统一键盘与底部导航区**：同步候选栏、键盘主体、系统导航区域
-- **普通字母键轻微染色**：让普通键帽也带一点壁纸色
+- **字母键增强染色**：默认只有轻微壁纸色，开启后提高染色强度
 - **首候选使用 Monet 强调色**：替换豆包固定蓝 `#4F84FF`
 - **突出搜索 / 确定键**：打开后 action 键使用 primary；关闭时与换行等功能键统一
 
