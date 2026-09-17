@@ -27,9 +27,9 @@
 - 中文首候选拼音高亮同步 Monet primary
 - 搜索 / 确定 / 换行键默认统一为功能键层级，可选突出 action 键
 - 模块自带设置界面
-- 设置页提供按豆包 1.4.5 真实 26 键比例绘制的实时预览
+- 设置页使用豆包 1.4.5 真机键盘模板做实时预览，保留真实键位、字体、图标与间距
 - 混色滑杆支持刻度和直接输入百分比数值
-- 支持一键应用设置并重启豆包输入法；ColorOS 上会自动切回豆包，避免强停后回退到系统输入法
+- 支持把设置直接热应用到当前键盘，不结束豆包输入法进程，也不切换默认输入法
 - 颜色资源 ID、系统 Monet palette 与应用 Context 均做进程内缓存，降低输入热路径开销
 
 ## 默认配色策略
@@ -43,6 +43,7 @@
 | 功能键 | 6% |
 | 候选 / 面板高亮 | 5% |
 | 按下态 | 12% |
+| 按键阴影 | 0% |
 
 文字与分隔线仍直接使用系统 Material token：
 
@@ -63,15 +64,13 @@
 
 - `com.bytedance.android.input.keyboard.KeyboardView#getAssetsMgr()` 是否仍存在
 - `assets/skin/default/values/colors.xml` / `dark_colors.xml` 是否仍存在
-- `com.bytedance.common_biz.tool_box.ToolboxKeyboardView` 是否仍存在
 - Android 资源 `navigation_bar_normal`、`candidate_item_text_highlighted` 是否仍存在
 
 ## 设置项
 
 ### 外观
 
-- **启用 Monet 配色**：关闭后需重启豆包输入法进程以完全恢复原始资源
-- **底部区域跟随键盘**：同步候选栏、键盘主体和系统导航区域
+- **启用 Monet 配色**：支持同进程开启 / 关闭；关闭后恢复豆包原始皮肤资源
 - **扩展面板跟随键盘**：覆盖工具面板、顶部工具栏、更多候选等原始灰色区域
 
 ### 混色强度
@@ -84,14 +83,17 @@
 - 候选 / 面板高亮
 - 按下态
 
-滑杆拖动时实时预览立即变化；松手或输入数字后写入设置。
+所有混色项统一为 0–100%。滑杆拖动时预览立即变化；松手或输入数字后写入设置。
 
 设置页同时提供：
 
-- 0 / 中间值 / 最大值刻度
+- 0 / 50 / 100 刻度
 - 可直接输入百分比的数字框
-- 按豆包 1.4.5 `input_kbd_pinyin26.xml` / `style.xml` 比例绘制的候选态键盘预览
-- **应用并重启豆包输入法**：root 环境下一键强停并重新设回豆包输入法，让实际键盘立即读取新配置
+- 按键阴影 0–100% 调节
+- 普通、拼音输入中、工具面板、语音四种预览状态
+- 预览基于真机键盘截图拆分出的前景和颜色蒙版，键位、文字、图标和几何位置直接沿用真机结果
+- 预览与实际键盘共用同一套 Monet 取色函数
+- **应用到当前键盘**：把整组设置直接发送给豆包进程，并热刷新 native 皮肤与 Android 资源，不结束输入法进程
 
 ### 候选与动作键
 
@@ -144,15 +146,17 @@ assets/skin/default/
 
 `libkeyboard.so` 通过 `KeyboardView.getAssetsMgr()` 获取 Java `AssetManager`，随后由 `libime_ui_android_platform.so` 的 Android assets 实现读取皮肤 XML。
 
-模块在 `getAssetsMgr()` 返回后追加一个只包含覆盖颜色文件的小 ZIP。Android AssetManager 会优先读取后追加路径中的同名 asset，因此无需修改豆包 APK。
+模块为当前配色生成一个只包含覆盖颜色文件的小 ZIP，并在 `getAssetsMgr()` 路径中把它加入豆包正在使用的 `AssetManager`。设置变化时会替换这份皮肤资源，并调用豆包自己的颜色方案刷新入口，让 native 键盘在同一进程中重新读取颜色表，因此无需修改豆包 APK。
 
-豆包还有一部分颜色来自 Android `res/color` / drawable，例如首候选固定蓝、键盘底部背景和候选高亮背景；这些通过针对性的运行时资源拦截映射到 Monet palette。0.3.2 起模块会在进程启动时把目标资源 ID 映射到内部角色，后续颜色读取不再反复解析资源名；Android Monet palette 也只在输入法生命周期刷新时重新读取。
+豆包另一部分 UI 来自 Android `res/color` / drawable，例如首候选固定蓝、键盘底部、工具箱、剪贴板、语音条和更多候选。模块统一处理 `Resources` 与 `TypedArray` 的颜色 / drawable 读取，把目标资源 ID 映射到 Monet 角色，因此布局 XML 在 inflate 时就能拿到正确背景。
 
-工具面板等区域在 XML inflate 时已把 `navigation_bar_normal` 解析成 Drawable，单纯拦截 `getColor()` 无法覆盖。因此模块还会在 `ToolboxKeyboardView` / `InputViewRoot` 的 View 子树中，仅替换已知豆包原始灰色背景，避免全局改色影响其它 UI。
+设置值由模块应用保存。豆包进程启动时读取最新配置；点击“应用到当前键盘”时，设置页会把整组数值直接发给当前豆包进程，豆包侧保存一份配置并立即刷新当前键盘，避免跨进程偏好文件刷新不及时造成的旧值问题。
+
+XML 中的 `android:background="@color/..."`、`setBackgroundResource(colorId)`、selector、圆角卡片等都在资源加载时直接得到替换后的颜色或 drawable。工具箱、剪贴板和语音状态不再依赖 View 挂载后的二次补色，也不会通过递归扫描 View 树修正背景。
 
 ## 致谢
 
-设计思路参考了 [0x1e93d/WeType_Monet](https://github.com/0x1e93d/WeType_Monet)。WeType_Monet 主要使用 Android RRO；豆包键盘主体使用自定义 asset 皮肤，因此本项目采用 AssetManager 注入 + Android 资源拦截 + 局部 View 背景处理的组合方式。
+设计思路参考了 [0x1e93d/WeType_Monet](https://github.com/0x1e93d/WeType_Monet)。WeType_Monet 主要使用 Android RRO；豆包键盘主体使用自定义 asset 皮肤，因此本项目采用 AssetManager 注入 + Android 资源映射的组合方式。
 
 ## 免责声明
 

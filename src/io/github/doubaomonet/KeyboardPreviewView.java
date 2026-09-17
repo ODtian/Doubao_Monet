@@ -2,83 +2,87 @@ package io.github.doubaomonet;
 
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.content.res.Configuration;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
-import android.graphics.Path;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffColorFilter;
 import android.graphics.RectF;
 import android.view.View;
 
-/**
- * Preview geometry follows Doubao IME 1.4.5's bundled skin instead of an
- * arbitrary keyboard mockup. The important source values are:
- *
- * - preview/skin width reference: 355 units
- * - candidate/top area: 57 units
- * - 4 keyboard rows, each 57 units
- * - bottom navigation area: ~49 units on the tested Android 16 device
- * - normal key margins: 2.25,4.75,2.25,4.75
- * - row 2 weights: 15,10,10,10,10,10,10,10,15
- * - row 3 weights: 15 + seven 10s + 15
- * - bottom row weights: 70.6,37.6,133.6,38.6,74.6
- *
- * These are taken from assets/skin/default/layout/input_kbd_pinyin26.xml and
- * style.xml in Doubao IME 1.4.5.
- */
-final class KeyboardPreviewView extends View {
-    private static final float SKIN_W = 355f;
-    private static final float CANDIDATE_H = 57f;
-    private static final float ROW_H = 57f;
-    private static final float NAV_H = 54.5f;
-    private static final float TOTAL_H = CANDIDATE_H + ROW_H * 4f + NAV_H;
+import java.io.InputStream;
 
-    private static final float KEY_MARGIN_X = 2.25f;
-    private static final float KEY_MARGIN_Y = 4.75f;
+final class KeyboardPreviewView extends View {
+    static final int MODE_NORMAL = 0;
+    static final int MODE_COMPOSING = 1;
+    static final int MODE_TOOLBOX = 2;
+    static final int MODE_ASR = 3;
+
+    private static final float REF_W = 1240f;
+    private static final float REF_H = 1072f;
+    private static final float KEY_RADIUS = 18f;
+
+    private static final float[][] ROW1 = {
+            {17,196,106,148},{139,196,106,148},{261,196,107,148},{384,196,106,148},{506,196,106,148},
+            {628,196,106,148},{750,196,106,148},{872,196,107,148},{995,196,106,148},{1117,196,106,148}
+    };
+    private static final float[][] ROW2 = {
+            {78,376,106,148},{200,376,107,148},{323,376,106,148},{445,376,106,148},{567,376,106,148},
+            {689,376,106,148},{811,376,107,148},{934,376,106,148},{1056,376,106,148}
+    };
+    private static final float[][] ROW3 = {
+            {200,556,106,148},{322,556,107,148},{445,556,106,148},{567,556,106,148},
+            {689,556,106,148},{811,556,107,148},{934,556,106,148}
+    };
+    private static final float[] SHIFT = {17,556,147,148};
+    private static final float[] DELETE = {1076,556,147,148};
+    private static final float[][] BOTTOM = {
+            {17,736,227,148},{260,736,113,148},{389,736,444,148},{849,736,117,148},{982,736,241,148}
+    };
+
+    private static final class Template {
+        Bitmap fg;
+        Bitmap body;
+        Bitmap letter;
+        Bitmap function;
+        Bitmap action;
+        Bitmap candidate;
+
+        void recycle() {
+            recycleOne(fg); recycleOne(body); recycleOne(letter);
+            recycleOne(function); recycleOne(action); recycleOne(candidate);
+            fg = body = letter = function = action = candidate = null;
+        }
+
+        private static void recycleOne(Bitmap b) {
+            if (b != null && !b.isRecycled()) b.recycle();
+        }
+    }
 
     private final SharedPreferences prefs;
-    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final RectF rect = new RectF();
-    private final Path path = new Path();
-
-    private final boolean night;
-    private final int primary;
-    private final int onPrimary;
-    private final int surfaceContainer;
-    private final int surfaceLow;
-    private final int surfaceHigh;
-    private final int onSurface;
-    private final int onSurfaceVariant;
+    private final Paint layerPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+    private final Paint shadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final RectF shadowRect = new RectF();
 
     private int backgroundTint;
     private int letterTint;
     private int functionTint;
     private int candidateTint;
     private int pressedTint;
+    private int shadowStrength;
     private boolean highlightCandidate;
     private boolean highlightAction;
-    private boolean syncBottom;
+    private int mode = MODE_NORMAL;
+    private Template template;
 
     KeyboardPreviewView(Context context, SharedPreferences prefs) {
         super(context);
         this.prefs = prefs;
-        night = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
-                == Configuration.UI_MODE_NIGHT_YES;
-        primary = systemColor(night ? "system_primary_dark" : "system_primary_light",
-                night ? 0xffaac7ff : 0xff415f91);
-        onPrimary = systemColor(night ? "system_on_primary_dark" : "system_on_primary_light",
-                night ? 0xff0b305f : 0xffffffff);
-        surfaceContainer = systemColor(night ? "system_surface_container_dark" : "system_surface_container_light",
-                night ? 0xff1f2024 : 0xffe7e8ee);
-        surfaceLow = systemColor(night ? "system_surface_container_high_dark" : "system_surface_container_low_light",
-                night ? 0xff292a2f : 0xfff3f3f9);
-        surfaceHigh = systemColor(night ? "system_surface_container_highest_dark" : "system_surface_container_high_light",
-                night ? 0xff34353a : 0xffe1e2e8);
-        onSurface = systemColor(night ? "system_on_surface_dark" : "system_on_surface_light",
-                night ? 0xffe3e2e8 : 0xff1b1c20);
-        onSurfaceVariant = systemColor(night ? "system_on_surface_variant_dark" : "system_on_surface_variant_light",
-                night ? 0xffc4c7cf : 0xff44474e);
+        MonetSkin.refreshPalette(getResources());
         reload();
+        loadTemplate();
     }
 
     void reload() {
@@ -87,373 +91,143 @@ final class KeyboardPreviewView extends View {
         functionTint = prefs.getInt("function_tint", HookConfig.DEFAULT_FUNCTION_TINT);
         candidateTint = prefs.getInt("candidate_tint", HookConfig.DEFAULT_CANDIDATE_TINT);
         pressedTint = prefs.getInt("pressed_tint", HookConfig.DEFAULT_PRESSED_TINT);
+        shadowStrength = prefs.getInt("key_shadow", HookConfig.DEFAULT_KEY_SHADOW);
         highlightCandidate = prefs.getBoolean("highlight_first_candidate", true);
         highlightAction = prefs.getBoolean("highlight_action_key", false);
-        syncBottom = prefs.getBoolean("sync_system_nav", true);
         invalidate();
     }
 
     void setTint(String key, int value) {
+        value = Math.max(0, Math.min(100, value));
         if ("background_tint".equals(key)) backgroundTint = value;
         else if ("letter_tint".equals(key)) letterTint = value;
         else if ("function_tint".equals(key)) functionTint = value;
         else if ("candidate_tint".equals(key)) candidateTint = value;
         else if ("pressed_tint".equals(key)) pressedTint = value;
+        else if ("key_shadow".equals(key)) shadowStrength = value;
         invalidate();
     }
 
     void setFlag(String key, boolean value) {
         if ("highlight_first_candidate".equals(key)) highlightCandidate = value;
         else if ("highlight_action_key".equals(key)) highlightAction = value;
-        else if ("sync_system_nav".equals(key)) syncBottom = value;
+        invalidate();
+    }
+
+    void setMode(int value) {
+        int next = Math.max(MODE_NORMAL, Math.min(MODE_ASR, value));
+        if (next == mode) return;
+        mode = next;
+        loadTemplate();
         invalidate();
     }
 
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         int width = MeasureSpec.getSize(widthMeasureSpec);
-        int desiredHeight = Math.round(width * TOTAL_H / SKIN_W);
-        setMeasuredDimension(width, resolveSize(desiredHeight, heightMeasureSpec));
+        int desired = Math.round(width * REF_H / REF_W);
+        setMeasuredDimension(width, resolveSize(desired, heightMeasureSpec));
     }
 
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-        int w = getWidth();
-        int h = getHeight();
-        if (w <= 0 || h <= 0) return;
+        if (template == null || getWidth() <= 0 || getHeight() <= 0) return;
 
-        float sx = w / SKIN_W;
-        float sy = h / TOTAL_H;
+        HookConfig.Values c = new HookConfig.Values(
+                true, true, true, highlightCandidate, highlightAction,
+                backgroundTint, letterTint, functionTint, candidateTint, pressedTint, shadowStrength);
+        int body = MonetSkin.keyboardSurface(getContext(), c);
+        int letter = MonetSkin.letterKeySurface(getContext(), c);
+        int function = MonetSkin.functionKeySurface(getContext(), c);
+        int candidate = highlightCandidate
+                ? MonetSkin.candidateBackground(getContext(), c)
+                : body;
+        int action = highlightAction ? MonetSkin.primary(getContext()) : function;
 
-        int body = blend(surfaceContainer, primary, backgroundTint / 100f);
-        int letter = blend(surfaceLow, primary, letterTint / 100f);
-        int function = blend(surfaceHigh, primary, functionTint / 100f);
-        int candidate = blend(surfaceLow, primary, candidateTint / 100f);
-        int pressed = blend(surfaceHigh, primary, pressedTint / 100f);
-        int action = highlightAction ? primary : function;
-
-        // Real keyboard body + bottom navigation region.
-        rect.set(0f, 0f, w, h);
-        fill(canvas, rect, body);
-        if (!syncBottom) {
-            rect.set(0f, sy * (TOTAL_H - NAV_H), w, h);
-            fill(canvas, rect, surfaceContainer);
-        }
-
-        drawCandidateBar(canvas, sx, sy, candidate);
-
-        float row1 = CANDIDATE_H;
-        drawWeightedKeyRow(
-                canvas,
-                new String[] {"Q","W","E","R","T","Y","U","I","O","P"},
-                new String[] {"1","2","3","4","5","6","7","8","9","0"},
-                new float[] {10,10,10,10,10,10,10,10,10,10},
-                row1,
-                letter,
-                function,
-                sx,
-                sy,
-                0);
-
-        float row2 = row1 + ROW_H;
-        drawWeightedKeyRow(
-                canvas,
-                new String[] {"A","S","D","F","G","H","J","K","L"},
-                new String[] {"-","/","：","；","（","）","～","“","”"},
-                new float[] {15,10,10,10,10,10,10,10,15},
-                row2,
-                letter,
-                function,
-                sx,
-                sy,
-                0);
-
-        float row3 = row2 + ROW_H;
-        drawWeightedKeyRow(
-                canvas,
-                new String[] {"分词","Z","X","C","V","B","N","M","⌫"},
-                new String[] {"","@",".","#","、","？","！","…",""},
-                new float[] {15,10,10,10,10,10,10,10,15},
-                row3,
-                letter,
-                function,
-                sx,
-                sy,
-                1);
-
-        float row4 = row3 + ROW_H;
-        drawBottomRow(canvas, row4, letter, function, action, sx, sy);
-        drawNavigation(canvas, sx, sy, body);
-
-        // Small pressed-state sample in the upper-right candidate region. It is deliberately
-        // subtle but gives the pressed slider an immediate visible reference.
-        rect.set(w - 20f * sx, 8f * sy, w - 7f * sx, 21f * sy);
-        fillRound(canvas, rect, pressed, 6f * sx);
+        float sx = getWidth() / REF_W;
+        float sy = getHeight() / REF_H;
+        drawMask(canvas, template.body, body, sx, sy);
+        if (mode != MODE_TOOLBOX) drawKeyShadows(canvas, sx, sy);
+        drawMask(canvas, template.letter, letter, sx, sy);
+        drawMask(canvas, template.function, function, sx, sy);
+        drawMask(canvas, template.action, action, sx, sy);
+        drawMask(canvas, template.candidate, candidate, sx, sy);
+        drawBitmap(canvas, template.fg, sx, sy, null);
     }
 
-    private void drawCandidateBar(Canvas canvas, float sx, float sy, int candidate) {
-        // The real composing state is two-tiered: ~1/3 pinyin text, ~2/3 candidates.
-        // Measured on the Ace 3V: keyboard top ~1700px, candidate keys start ~1760px,
-        // first alphabet row starts ~1880px. This maps closely to 19 + 38 skin units.
-        final float pinyinH = 19f;
-        final float candidateRowTop = pinyinH;
-
-        drawText(canvas, "ni'hao", 5f * sx, 14.5f * sy, onSurface, 12.5f * sx, false);
-
-        if (highlightCandidate) {
-            rect.set(4f * sx, 22f * sy, 61f * sx, 54f * sy);
-            fillRound(canvas, rect, candidate, 8f * sx);
-        }
-        drawText(canvas, "你好", 13f * sx, 46.5f * sy,
-                highlightCandidate ? primary : onSurface, 17f * sx, true);
-
-        // Doubao inserts emoji / kaomoji suggestions between regular word candidates.
-        drawText(canvas, "👋", 72f * sx, 46f * sy, onSurface, 16f * sx, false);
-        drawText(canvas, "ヾ(=^▽^=)ノ", 112f * sx, 46f * sy, onSurface, 12.5f * sx, false);
-        drawText(canvas, "你号", 255f * sx, 46.5f * sy, onSurface, 17f * sx, false);
-
-        // More-candidate divider + down chevron at the right edge.
-        paint.setStrokeWidth(Math.max(1f, 0.65f * sx));
-        paint.setColor(withAlpha(onSurfaceVariant, 0.32f));
-        canvas.drawLine(326f * sx, 23f * sy, 326f * sx, 52f * sy, paint);
-        paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(Math.max(1.4f, 1.1f * sx));
-        paint.setStrokeCap(Paint.Cap.ROUND);
-        paint.setColor(onSurfaceVariant);
-        canvas.drawLine(335f * sx, 37f * sy, 340f * sx, 42f * sy, paint);
-        canvas.drawLine(340f * sx, 42f * sy, 345f * sx, 37f * sy, paint);
-        paint.setStyle(Paint.Style.FILL);
-        paint.setStrokeCap(Paint.Cap.BUTT);
+    private void drawMask(Canvas canvas, Bitmap bitmap, int color, float sx, float sy) {
+        if (bitmap == null) return;
+        layerPaint.setColorFilter(new PorterDuffColorFilter(color, PorterDuff.Mode.SRC_IN));
+        drawBitmap(canvas, bitmap, sx, sy, layerPaint);
+        layerPaint.setColorFilter(null);
     }
 
-    private void drawWeightedKeyRow(
-            Canvas canvas,
-            String[] labels,
-            String[] secondary,
-            float[] weights,
-            float topSkin,
-            int letterColor,
-            int functionColor,
-            float sx,
-            float sy,
-            int edgeMode) {
-        float totalWeight = 0f;
-        for (float weight : weights) totalWeight += weight;
-
-        float x = 0f;
-        for (int i = 0; i < labels.length; i++) {
-            float cellW = SKIN_W * weights[i] / totalWeight;
-            float ml = KEY_MARGIN_X;
-            float mr = KEY_MARGIN_X;
-            boolean functionKey = false;
-
-            if (edgeMode == 1 && i == 0) {
-                // cls_button_left_big: 2.25,4.75,8,4.75
-                ml = 2.25f;
-                mr = 8f;
-                functionKey = true;
-            } else if (edgeMode == 1 && i == labels.length - 1) {
-                // cls_button_right_big: 8,4.75,2.25,4.75
-                ml = 8f;
-                mr = 2.25f;
-                functionKey = true;
-            }
-
-            rect.set(
-                    (x + ml) * sx,
-                    (topSkin + KEY_MARGIN_Y) * sy,
-                    (x + cellW - mr) * sx,
-                    (topSkin + ROW_H - KEY_MARGIN_Y) * sy);
-            fillRound(canvas, rect, functionKey ? functionColor : letterColor, 6f * sx);
-
-            if (functionKey) {
-                centerText(canvas, labels[i], rect, onSurface, 18f * sx, false);
-            } else {
-                centerText(canvas, labels[i], rect, onSurface, 19f * sx, false);
-                if (secondary != null && i < secondary.length && secondary[i] != null
-                        && !secondary[i].isEmpty()) {
-                    drawText(
-                            canvas,
-                            secondary[i],
-                            rect.left + 3.7f * sx,
-                            rect.top + 9.5f * sy,
-                            onSurfaceVariant,
-                            7.5f * sx,
-                            false);
-                }
-            }
-            x += cellW;
-        }
+    private void drawBitmap(Canvas canvas, Bitmap bitmap, float sx, float sy, Paint paint) {
+        if (bitmap == null) return;
+        int save = canvas.save();
+        canvas.scale(sx, sy);
+        canvas.drawBitmap(bitmap, 0f, 0f, paint);
+        canvas.restoreToCount(save);
     }
 
-    private void drawBottomRow(
-            Canvas canvas,
-            float topSkin,
-            int letterColor,
-            int functionColor,
-            int actionColor,
-            float sx,
-            float sy) {
-        // Exact adaptive width weights used by the normal 26-key bottom row.
-        float[] weights = {70.6f, 37.6f, 133.6f, 38.6f, 74.6f};
-        float sum = 0f;
-        for (float value : weights) sum += value; // 355.0
-
-        float x = 0f;
-        for (int i = 0; i < weights.length; i++) {
-            float cellW = SKIN_W * weights[i] / sum;
-            int bg;
-            if (i == 0 || i == 4) bg = i == 4 ? actionColor : functionColor;
-            else bg = letterColor;
-
-            rect.set(
-                    (x + KEY_MARGIN_X) * sx,
-                    (topSkin + KEY_MARGIN_Y) * sy,
-                    (x + cellW - KEY_MARGIN_X) * sx,
-                    (topSkin + ROW_H - KEY_MARGIN_Y) * sy);
-            fillRound(canvas, rect, bg, 6f * sx);
-
-            switch (i) {
-                case 0:
-                    centerText(canvas, "123", rect, onSurface, 15f * sx, false);
-                    break;
-                case 1:
-                    centerText(canvas, "，", rect, onSurface, 19f * sx, false);
-                    drawText(canvas, "。", rect.left + 4f * sx, rect.top + 9f * sy,
-                            onSurfaceVariant, 7f * sx, false);
-                    break;
-                case 2:
-                    drawVoiceWave(canvas, rect, onSurfaceVariant, sx, sy);
-                    break;
-                case 3:
-                    drawCnEn(canvas, rect, sx, sy);
-                    break;
-                case 4:
-                    centerText(canvas, "确定", rect,
-                            highlightAction ? onPrimary : onSurface, 14f * sx, false);
-                    break;
-                default:
-                    break;
-            }
-            x += cellW;
-        }
+    private void drawKeyShadows(Canvas canvas, float sx, float sy) {
+        if (shadowStrength <= 0) return;
+        int alpha = Math.round(46f * shadowStrength / 100f);
+        shadowPaint.setColor(Color.argb(alpha, 0, 0, 0));
+        for (float[] r : ROW1) shadow(canvas, r, sx, sy);
+        for (float[] r : ROW2) shadow(canvas, r, sx, sy);
+        for (float[] r : ROW3) shadow(canvas, r, sx, sy);
+        shadow(canvas, SHIFT, sx, sy);
+        shadow(canvas, DELETE, sx, sy);
+        for (float[] r : BOTTOM) shadow(canvas, r, sx, sy);
     }
 
-    private void drawVoiceWave(Canvas canvas, RectF key, int color, float sx, float sy) {
-        float cx = key.centerX();
-        float cy = key.centerY();
-        float[] heights = {7f, 14f, 20f, 13f, 7f};
-        paint.setColor(color);
-        paint.setStrokeCap(Paint.Cap.ROUND);
-        paint.setStrokeWidth(Math.max(1.4f, 2.2f * sx));
-        for (int i = 0; i < heights.length; i++) {
-            float x = cx + (i - 2) * 5f * sx;
-            float half = heights[i] * sy / 2f;
-            canvas.drawLine(x, cy - half, x, cy + half, paint);
-        }
-        paint.setStrokeCap(Paint.Cap.BUTT);
+    private void shadow(Canvas canvas, float[] r, float sx, float sy) {
+        float dx = 0f;
+        float dy = 4f;
+        shadowRect.set(
+                (r[0] + dx) * sx,
+                (r[1] + dy) * sy,
+                (r[0] + r[2] + dx) * sx,
+                (r[1] + r[3] + dy) * sy);
+        canvas.drawRoundRect(shadowRect, KEY_RADIUS * sx, KEY_RADIUS * sy, shadowPaint);
     }
 
-    private void drawCnEn(Canvas canvas, RectF key, float sx, float sy) {
-        float cx = key.centerX();
-        float cy = key.centerY();
-        paint.setTextAlign(Paint.Align.CENTER);
-        paint.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-        paint.setTextSize(13f * sx);
-        paint.setColor(onSurface);
-        canvas.drawText("中", cx - 4f * sx, cy - 2f * sy, paint);
-        paint.setTypeface(android.graphics.Typeface.DEFAULT);
-        paint.setTextSize(9f * sx);
-        paint.setColor(onSurfaceVariant);
-        canvas.drawText("英", cx + 7f * sx, cy + 8f * sy, paint);
+    private void loadTemplate() {
+        if (template != null) template.recycle();
+        String name;
+        if (mode == MODE_COMPOSING) name = "composing";
+        else if (mode == MODE_TOOLBOX) name = "tools";
+        else if (mode == MODE_ASR) name = "voice";
+        else name = "normal";
+
+        Template t = new Template();
+        t.fg = load("preview_" + name + "_fg.png");
+        t.body = load("preview_" + name + "_body.png");
+        t.letter = load("preview_" + name + "_letter.png");
+        t.function = load("preview_" + name + "_function.png");
+        t.action = load("preview_" + name + "_action.png");
+        t.candidate = load("preview_" + name + "_candidate.png");
+        template = t;
     }
 
-    private void drawNavigation(Canvas canvas, float sx, float sy, int body) {
-        float top = (TOTAL_H - NAV_H) * sy;
-        int nav = syncBottom ? body : surfaceContainer;
-        rect.set(0f, top, getWidth(), getHeight());
-        fill(canvas, rect, nav);
-
-        // down chevron
-        paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(Math.max(1.4f, 1.8f * sx));
-        paint.setStrokeCap(Paint.Cap.ROUND);
-        paint.setStrokeJoin(Paint.Join.ROUND);
-        paint.setColor(onSurfaceVariant);
-        path.reset();
-        path.moveTo(27f * sx, top + 21f * sy);
-        path.lineTo(33f * sx, top + 27f * sy);
-        path.lineTo(39f * sx, top + 21f * sy);
-        canvas.drawPath(path, paint);
-
-        // globe-like icon on the right
-        float cx = 324f * sx;
-        float cy = top + 24f * sy;
-        float r = 9f * sx;
-        canvas.drawCircle(cx, cy, r, paint);
-        canvas.drawOval(new RectF(cx - r * 0.45f, cy - r, cx + r * 0.45f, cy + r), paint);
-        canvas.drawLine(cx - r, cy, cx + r, cy, paint);
-        paint.setStyle(Paint.Style.FILL);
-        paint.setStrokeCap(Paint.Cap.BUTT);
-    }
-
-    private void fill(Canvas canvas, RectF r, int color) {
-        paint.setStyle(Paint.Style.FILL);
-        paint.setColor(color);
-        canvas.drawRect(r, paint);
-    }
-
-    private void fillRound(Canvas canvas, RectF r, int color, float radius) {
-        paint.setStyle(Paint.Style.FILL);
-        paint.setColor(color);
-        canvas.drawRoundRect(r, radius, radius, paint);
-    }
-
-    private void drawText(Canvas canvas, String text, float x, float baseline, int color,
-                          float px, boolean bold) {
-        paint.setStyle(Paint.Style.FILL);
-        paint.setColor(color);
-        paint.setTextSize(px);
-        paint.setTypeface(bold ? android.graphics.Typeface.DEFAULT_BOLD : android.graphics.Typeface.DEFAULT);
-        paint.setTextAlign(Paint.Align.LEFT);
-        canvas.drawText(text, x, baseline, paint);
-    }
-
-    private void centerText(Canvas canvas, String text, RectF r, int color, float px, boolean bold) {
-        paint.setStyle(Paint.Style.FILL);
-        paint.setColor(color);
-        paint.setTextSize(px);
-        paint.setTypeface(bold ? android.graphics.Typeface.DEFAULT_BOLD : android.graphics.Typeface.DEFAULT);
-        paint.setTextAlign(Paint.Align.CENTER);
-        Paint.FontMetrics fm = paint.getFontMetrics();
-        float y = r.centerY() - (fm.ascent + fm.descent) / 2f;
-        canvas.drawText(text, r.centerX(), y, paint);
-    }
-
-    private int systemColor(String name, int fallback) {
-        int id = getResources().getIdentifier(name, "color", "android");
-        if (id == 0) return fallback;
-        try {
-            return getResources().getColor(id, null);
+    private Bitmap load(String path) {
+        try (InputStream in = getContext().getAssets().open(path)) {
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+            return BitmapFactory.decodeStream(in, null, options);
         } catch (Throwable ignored) {
-            return fallback;
+            return null;
         }
     }
 
-    private int blend(int base, int tint, float amount) {
-        float a = Math.max(0f, Math.min(1f, amount));
-        return Color.rgb(
-                Math.round(Color.red(base) * (1f - a) + Color.red(tint) * a),
-                Math.round(Color.green(base) * (1f - a) + Color.green(tint) * a),
-                Math.round(Color.blue(base) * (1f - a) + Color.blue(tint) * a));
-    }
-
-    private int withAlpha(int color, float alpha) {
-        return Color.argb(
-                Math.round(255f * alpha),
-                Color.red(color),
-                Color.green(color),
-                Color.blue(color));
+    @Override
+    protected void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
+        if (template != null) {
+            template.recycle();
+            template = null;
+        }
     }
 }

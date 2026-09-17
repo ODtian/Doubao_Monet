@@ -49,7 +49,7 @@ final class MonetSkin {
 
     static String paletteKey(Context context, HookConfig.Values config) {
         Palette p = palette(context.getResources());
-        return "v7_" + p.key() + "_" + config.key();
+        return "v8_" + p.key() + "_" + config.key();
     }
 
     static Result build(Context context, AssetManager source, HookConfig.Values config, String key) throws Exception {
@@ -97,6 +97,31 @@ final class MonetSkin {
     static int primary(Context context) {
         Palette p = palette(context.getResources());
         return isNight(context.getResources()) ? p.primaryDark : p.primary;
+    }
+
+    static int onPrimary(Context context) {
+        Palette p = palette(context.getResources());
+        return isNight(context.getResources()) ? p.onPrimaryDark : p.onPrimary;
+    }
+
+    static int onSurface(Context context) {
+        Palette p = palette(context.getResources());
+        return isNight(context.getResources()) ? p.onSurfaceDark : p.onSurface;
+    }
+
+    static int onSurfaceVariant(Context context) {
+        Palette p = palette(context.getResources());
+        return isNight(context.getResources()) ? p.onSurfaceVariantDark : p.onSurfaceVariant;
+    }
+
+    static int outlineVariant(Context context) {
+        Palette p = palette(context.getResources());
+        return isNight(context.getResources()) ? p.outlineVariantDark : p.outlineVariant;
+    }
+
+    static int baseSurface(Context context) {
+        Palette p = palette(context.getResources());
+        return isNight(context.getResources()) ? p.surfaceContainerDark : p.surfaceContainer;
     }
 
     static int primaryWithAlpha(Context context, float alpha) {
@@ -156,6 +181,12 @@ final class MonetSkin {
         return mix(p.surfaceHigh, p.primary, config.pressedTint / 100f);
     }
 
+    private static int keyShadowColor(boolean dark, HookConfig.Values config) {
+        float originalAlpha = dark ? 0.40f : 0.30f;
+        float alpha = originalAlpha * (config.keyShadow / 100f);
+        return Color.argb(Math.round(255f * alpha), 0, 0, 0);
+    }
+
     private static int mix(int base, int tint, float amount) {
         float a = Math.max(0f, Math.min(1f, amount));
         return Color.rgb(
@@ -212,8 +243,8 @@ final class MonetSkin {
         put(m, p.onPrimaryContainer, "action_button_pushedtext");
         put(m, candidate, "trans_action_button_bk");
         put(m, pressed, "trans_action_button_pushedbk");
-        put(m, Color.TRANSPARENT,
-                "keybutton_func_border", "keybutton_white_shadow", "keybutton_gray_shadow");
+        put(m, Color.TRANSPARENT, "keybutton_func_border");
+        put(m, keyShadowColor(false, config), "keybutton_white_shadow", "keybutton_gray_shadow");
         return m;
     }
 
@@ -253,8 +284,8 @@ final class MonetSkin {
         put(m, p.onPrimaryContainerDark, "action_button_pushedtext");
         put(m, candidate, "trans_action_button_bk");
         put(m, pressed, "trans_action_button_pushedbk");
-        put(m, Color.TRANSPARENT,
-                "keybutton_func_border", "keybutton_white_shadow", "keybutton_gray_shadow");
+        put(m, Color.TRANSPARENT, "keybutton_func_border");
+        put(m, keyShadowColor(true, config), "keybutton_white_shadow", "keybutton_gray_shadow");
         return m;
     }
 

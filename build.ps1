@@ -115,4 +115,16 @@ if ($LASTEXITCODE -ne 0) { throw 'apksigner failed' }
 if ($LASTEXITCODE -ne 0) { throw 'verification failed' }
 
 Get-Item $Out | Select-Object FullName, Length, LastWriteTime
-Get-FileHash $Out -Algorithm SHA256
+$Sha = [System.Security.Cryptography.SHA256]::Create()
+try {
+    $Stream = [System.IO.File]::OpenRead($Out)
+    try {
+        $HashBytes = $Sha.ComputeHash($Stream)
+    } finally {
+        $Stream.Dispose()
+    }
+} finally {
+    $Sha.Dispose()
+}
+$Hash = -join ($HashBytes | ForEach-Object { $_.ToString('x2') })
+[PSCustomObject]@{ SHA256 = $Hash }

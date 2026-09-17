@@ -1,6 +1,7 @@
 package io.github.doubaomonet;
 
 import android.app.Activity;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.res.ColorStateList;
 import android.content.res.Configuration;
@@ -86,13 +87,6 @@ public final class SettingsActivity extends Activity {
                 false);
         addDivider(appearance);
         addSwitchRow(appearance,
-                "底部区域跟随键盘",
-                "统一候选栏、键盘主体和底部导航区域。",
-                "sync_system_nav",
-                true,
-                false);
-        addDivider(appearance);
-        addSwitchRow(appearance,
                 "扩展面板跟随键盘",
                 "覆盖工具面板、顶部工具栏、更多候选等仍使用豆包原始灰色的区域。",
                 "sync_extended_panels",
@@ -102,7 +96,7 @@ public final class SettingsActivity extends Activity {
 
         addSectionTitle("混色强度");
         LinearLayout tintCard = newCard();
-        TextView tintHint = bodyText("0% 只使用对应 Material surface；数值越大，越向当前 Monet primary 靠拢。", 12.2f, 0.62f);
+        TextView tintHint = bodyText("所有混色项统一为 0–100%。0% 只使用对应 Material surface；100% 完全使用当前 Monet primary。", 12.2f, 0.62f);
         LinearLayout.LayoutParams hintParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -111,16 +105,30 @@ public final class SettingsActivity extends Activity {
         hintParams.topMargin = dp(10);
         hintParams.bottomMargin = dp(4);
         tintCard.addView(tintHint, hintParams);
-        addSliderRow(tintCard, "键盘底板", "background_tint", HookConfig.DEFAULT_BACKGROUND_TINT, 30);
+        addSliderRow(tintCard, "键盘底板", "background_tint", HookConfig.DEFAULT_BACKGROUND_TINT, 100);
         addDivider(tintCard);
-        addSliderRow(tintCard, "普通字母键", "letter_tint", HookConfig.DEFAULT_LETTER_TINT, 30);
+        addSliderRow(tintCard, "普通字母键", "letter_tint", HookConfig.DEFAULT_LETTER_TINT, 100);
         addDivider(tintCard);
-        addSliderRow(tintCard, "功能键", "function_tint", HookConfig.DEFAULT_FUNCTION_TINT, 35);
+        addSliderRow(tintCard, "功能键", "function_tint", HookConfig.DEFAULT_FUNCTION_TINT, 100);
         addDivider(tintCard);
-        addSliderRow(tintCard, "候选 / 面板高亮", "candidate_tint", HookConfig.DEFAULT_CANDIDATE_TINT, 30);
+        addSliderRow(tintCard, "候选 / 面板高亮", "candidate_tint", HookConfig.DEFAULT_CANDIDATE_TINT, 100);
         addDivider(tintCard);
-        addSliderRow(tintCard, "按下态", "pressed_tint", HookConfig.DEFAULT_PRESSED_TINT, 45);
+        addSliderRow(tintCard, "按下态", "pressed_tint", HookConfig.DEFAULT_PRESSED_TINT, 100);
         root.addView(tintCard, cardParams());
+
+        addSectionTitle("键帽细节");
+        LinearLayout keyDetail = newCard();
+        TextView shadowHint = bodyText("按键阴影 0% 表示关闭；100% 等于豆包原始阴影强度。", 12.2f, 0.62f);
+        LinearLayout.LayoutParams shadowHintParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        shadowHintParams.leftMargin = dp(14);
+        shadowHintParams.rightMargin = dp(14);
+        shadowHintParams.topMargin = dp(10);
+        shadowHintParams.bottomMargin = dp(4);
+        keyDetail.addView(shadowHint, shadowHintParams);
+        addSliderRow(keyDetail, "按键阴影", "key_shadow", HookConfig.DEFAULT_KEY_SHADOW, 100);
+        root.addView(keyDetail, cardParams());
 
         addSectionTitle("候选与动作键");
         LinearLayout behavior = newCard();
@@ -141,12 +149,12 @@ public final class SettingsActivity extends Activity {
 
         addSectionTitle("应用");
         LinearLayout applyCard = newCard();
-        applyStatus = bodyText("当前设置已保存；实际键盘需要重新创建后刷新。", 12.4f, 0.68f);
+        applyStatus = bodyText("当前设置已保存；点击下方按钮可直接刷新当前键盘。", 12.4f, 0.68f);
         applyStatus.setPadding(dp(14), dp(10), dp(14), dp(4));
         applyCard.addView(applyStatus);
 
-        TextView restart = actionButton("应用并重启豆包输入法", true);
-        restart.setOnClickListener(v -> restartTarget());
+        TextView restart = actionButton("应用到当前键盘", true);
+        restart.setOnClickListener(v -> applyToKeyboard());
         LinearLayout.LayoutParams restartParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         restartParams.leftMargin = dp(10);
@@ -156,8 +164,9 @@ public final class SettingsActivity extends Activity {
 
         TextView reset = actionButton("恢复默认设置", false);
         reset.setOnClickListener(v -> {
-            prefs.edit().clear().commit();
-            dirty = true;
+            int revision = prefs.getInt("config_rev", 0);
+            prefs.edit().clear().putInt("config_rev", revision).commit();
+            applyToKeyboard();
             recreate();
         });
         LinearLayout.LayoutParams resetParams = new LinearLayout.LayoutParams(
@@ -170,7 +179,7 @@ public final class SettingsActivity extends Activity {
         root.addView(applyCard, cardParams());
 
         TextView footer = bodyText(
-                "拖动时预览立即更新；松手或输入数字后才写入设置。实际豆包键盘请点“应用并重启”。\n"
+                "拖动时预览立即更新；松手或输入数字后写入设置。实际豆包键盘请点“应用到当前键盘”。\n"
                         + "适配：豆包输入法 1.4.5 · Android 12+ · Vector / Xposed compatible",
                 12.2f,
                 0.68f);
@@ -226,7 +235,7 @@ public final class SettingsActivity extends Activity {
         row.addView(textBlock, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
         TextView version = new TextView(this);
-        version.setText("0.3.2");
+        version.setText("0.3.3");
         version.setTextSize(12);
         version.setTextColor(onPrimaryContainer);
         version.setGravity(Gravity.CENTER);
@@ -244,16 +253,25 @@ public final class SettingsActivity extends Activity {
 
         LinearLayout dots = new LinearLayout(this);
         dots.setOrientation(LinearLayout.HORIZONTAL);
-        dots.addView(colorDot(primary));
+        HookConfig.Values config = new HookConfig.Values(
+                true,
+                true,
+                prefs.getBoolean("sync_extended_panels", true),
+                prefs.getBoolean("highlight_first_candidate", true),
+                prefs.getBoolean("highlight_action_key", false),
+                prefs.getInt("background_tint", HookConfig.DEFAULT_BACKGROUND_TINT),
+                prefs.getInt("letter_tint", HookConfig.DEFAULT_LETTER_TINT),
+                prefs.getInt("function_tint", HookConfig.DEFAULT_FUNCTION_TINT),
+                prefs.getInt("candidate_tint", HookConfig.DEFAULT_CANDIDATE_TINT),
+                prefs.getInt("pressed_tint", HookConfig.DEFAULT_PRESSED_TINT),
+                prefs.getInt("key_shadow", HookConfig.DEFAULT_KEY_SHADOW));
+        dots.addView(colorDot(MonetSkin.primary(this)));
         LinearLayout.LayoutParams secondDot = new LinearLayout.LayoutParams(dp(30), dp(30));
         secondDot.leftMargin = -dp(6);
-        View surfaceDot = colorDot(surfaceContainer);
-        dots.addView(surfaceDot, secondDot);
+        dots.addView(colorDot(MonetSkin.keyboardSurface(this, config)), secondDot);
         LinearLayout.LayoutParams thirdDot = new LinearLayout.LayoutParams(dp(30), dp(30));
         thirdDot.leftMargin = -dp(6);
-        int functionTint = prefs.getInt("function_tint", HookConfig.DEFAULT_FUNCTION_TINT);
-        View functionDot = colorDot(blend(surfaceContainer, primary, functionTint / 100f));
-        dots.addView(functionDot, thirdDot);
+        dots.addView(colorDot(MonetSkin.functionKeySurface(this, config)), thirdDot);
         card.addView(dots);
 
         LinearLayout textBlock = new LinearLayout(this);
@@ -261,7 +279,7 @@ public final class SettingsActivity extends Activity {
         TextView title = bodyText("当前动态色", 15.2f, 1f);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         textBlock.addView(title);
-        TextView sub = bodyText("直接读取 Android framework 的 Monet 色板", 12.5f, 0.68f);
+        TextView sub = bodyText("从左到右：Monet primary、当前键盘底板、当前功能键；与实际注入使用同一取色链路。", 12.5f, 0.68f);
         LinearLayout.LayoutParams subParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -284,6 +302,40 @@ public final class SettingsActivity extends Activity {
         addSectionTitle("实时预览");
         LinearLayout card = newCard();
         preview = new KeyboardPreviewView(this, prefs);
+
+        LinearLayout modeRow = new LinearLayout(this);
+        modeRow.setOrientation(LinearLayout.HORIZONTAL);
+        modeRow.setGravity(Gravity.CENTER);
+        final String[] modeLabels = {"普通", "输入中", "工具", "语音"};
+        final TextView[] modeButtons = new TextView[modeLabels.length];
+        for (int i = 0; i < modeLabels.length; i++) {
+            final int selected = i;
+            TextView b = new TextView(this);
+            b.setText(modeLabels[i]);
+            b.setTextSize(12.5f);
+            b.setGravity(Gravity.CENTER);
+            b.setPadding(dp(8), dp(8), dp(8), dp(8));
+            b.setTextColor(i == 0 ? onPrimaryContainer : onSurfaceVariant);
+            b.setBackground(roundRect(i == 0 ? primaryContainer : surfaceContainer, 12));
+            b.setOnClickListener(v -> {
+                preview.setMode(selected);
+                for (int j = 0; j < modeButtons.length; j++) {
+                    modeButtons[j].setTextColor(j == selected ? onPrimaryContainer : onSurfaceVariant);
+                    modeButtons[j].setBackground(roundRect(j == selected ? primaryContainer : surfaceContainer, 12));
+                }
+            });
+            modeButtons[i] = b;
+            LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(0, dp(40), 1f);
+            if (i > 0) bp.leftMargin = dp(6);
+            modeRow.addView(b, bp);
+        }
+        LinearLayout.LayoutParams modeParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        modeParams.leftMargin = dp(10);
+        modeParams.rightMargin = dp(10);
+        modeParams.topMargin = dp(10);
+        card.addView(modeRow, modeParams);
+
         LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         previewParams.leftMargin = dp(8);
@@ -291,7 +343,7 @@ public final class SettingsActivity extends Activity {
         previewParams.topMargin = dp(8);
         card.addView(preview, previewParams);
 
-        TextView hint = bodyText("预览按豆包 1.4.5 真实 26 键比例绘制，并跟随滑杆实时变化。", 12.2f, 0.62f);
+        TextView hint = bodyText("预览可切换普通、拼音输入中、工具面板和语音状态；配色跟随滑杆实时变化。", 12.2f, 0.62f);
         LinearLayout.LayoutParams hintParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         hintParams.leftMargin = dp(14);
@@ -336,40 +388,26 @@ public final class SettingsActivity extends Activity {
         }
     }
 
-    private void restartTarget() {
+    private void applyToKeyboard() {
+        View focused = getCurrentFocus();
+        if (focused != null) focused.clearFocus();
+
+        int rev = prefs.getInt("config_rev", 0) + 1;
+        prefs.edit().putInt("config_rev", rev).commit();
+
+        Intent apply = new Intent(HookConfig.ACTION_APPLY);
+        apply.setPackage(TARGET_PACKAGE);
+        apply.putExtras(HookConfig.bundleFromPrefs(prefs));
+        apply.addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES);
+        sendBroadcast(apply);
+
+        dirty = false;
         if (applyStatus != null) {
-            applyStatus.setText("正在重启豆包输入法…");
+            applyStatus.setText("设置已发送到豆包输入法；当前键盘会原位刷新。");
             applyStatus.setTextColor(onSurfaceVariant);
+            applyStatus.setAlpha(0.78f);
         }
-        new Thread(() -> {
-            boolean ok = false;
-            try {
-                String command = "am force-stop " + TARGET_PACKAGE
-                        + "; sleep 0.2; ime set " + TARGET_PACKAGE + "/.ImeService";
-                Process process = new ProcessBuilder(
-                        "su", "-c", command).redirectErrorStream(true).start();
-                ok = process.waitFor() == 0;
-            } catch (Throwable ignored) {
-            }
-            final boolean success = ok;
-            runOnUiThread(() -> {
-                if (success) {
-                    dirty = false;
-                    if (applyStatus != null) {
-                        applyStatus.setText("已重启豆包输入法。回到输入框即可看到新配置。");
-                        applyStatus.setTextColor(onSurfaceVariant);
-                        applyStatus.setAlpha(0.78f);
-                    }
-                    Toast.makeText(this, "豆包输入法已重启", Toast.LENGTH_SHORT).show();
-                } else {
-                    if (applyStatus != null) {
-                        applyStatus.setText("自动重启失败：未获得 root 权限。请手动强行停止豆包输入法。");
-                        applyStatus.setTextColor(primary);
-                    }
-                    Toast.makeText(this, "重启失败，请检查 root 授权", Toast.LENGTH_LONG).show();
-                }
-            });
-        }, "DoubaoMonet-Restart").start();
+        Toast.makeText(this, "设置已应用", Toast.LENGTH_SHORT).show();
     }
 
     private void addSectionTitle(String text) {
@@ -454,6 +492,45 @@ public final class SettingsActivity extends Activity {
         parent.addView(row);
     }
 
+    private HookConfig.Values configForSlider(String key, int value) {
+        int background = prefs.getInt("background_tint", HookConfig.DEFAULT_BACKGROUND_TINT);
+        int letter = prefs.getInt("letter_tint", HookConfig.DEFAULT_LETTER_TINT);
+        int function = prefs.getInt("function_tint", HookConfig.DEFAULT_FUNCTION_TINT);
+        int candidate = prefs.getInt("candidate_tint", HookConfig.DEFAULT_CANDIDATE_TINT);
+        int pressed = prefs.getInt("pressed_tint", HookConfig.DEFAULT_PRESSED_TINT);
+        int shadow = prefs.getInt("key_shadow", HookConfig.DEFAULT_KEY_SHADOW);
+        if ("background_tint".equals(key)) background = value;
+        else if ("letter_tint".equals(key)) letter = value;
+        else if ("function_tint".equals(key)) function = value;
+        else if ("candidate_tint".equals(key)) candidate = value;
+        else if ("pressed_tint".equals(key)) pressed = value;
+        else if ("key_shadow".equals(key)) shadow = value;
+        return new HookConfig.Values(
+                prefs.getBoolean("enabled", true),
+                true,
+                prefs.getBoolean("sync_extended_panels", true),
+                prefs.getBoolean("highlight_first_candidate", true),
+                prefs.getBoolean("highlight_action_key", false),
+                background, letter, function, candidate, pressed, shadow);
+    }
+
+    private int sliderColor(String key, int value) {
+        HookConfig.Values c = configForSlider(key, value);
+        if ("background_tint".equals(key)) return MonetSkin.keyboardSurface(this, c);
+        if ("letter_tint".equals(key)) return MonetSkin.letterKeySurface(this, c);
+        if ("function_tint".equals(key)) return MonetSkin.functionKeySurface(this, c);
+        if ("candidate_tint".equals(key)) return MonetSkin.candidateBackground(this, c);
+        if ("pressed_tint".equals(key)) return MonetSkin.functionKeyPressedSurface(this, c);
+        return onSurfaceVariant;
+    }
+
+    private void tintSlider(SeekBar seek, String key, int value) {
+        int c = sliderColor(key, value);
+        seek.setThumbTintList(ColorStateList.valueOf(c));
+        seek.setProgressTintList(ColorStateList.valueOf(c));
+        seek.setProgressBackgroundTintList(ColorStateList.valueOf(withAlpha(onSurfaceVariant, 0.18f)));
+    }
+
     private void addSliderRow(
             LinearLayout parent,
             String title,
@@ -497,9 +574,7 @@ public final class SettingsActivity extends Activity {
         int initial = Math.max(0, Math.min(maxValue, prefs.getInt(key, defaultValue)));
         seek.setProgress(initial);
         number.setText(String.valueOf(initial));
-        seek.setThumbTintList(ColorStateList.valueOf(primary));
-        seek.setProgressTintList(ColorStateList.valueOf(primary));
-        seek.setProgressBackgroundTintList(ColorStateList.valueOf(withAlpha(onSurfaceVariant, 0.18f)));
+        tintSlider(seek, key, initial);
 
         final boolean[] updating = {false};
         Runnable commitNumber = () -> {
@@ -517,6 +592,7 @@ public final class SettingsActivity extends Activity {
             number.setSelection(number.length());
             updating[0] = false;
             prefs.edit().putInt(key, value).commit();
+            tintSlider(seek, key, value);
             if (preview != null) preview.setTint(key, value);
             markDirty();
         };
@@ -530,6 +606,7 @@ public final class SettingsActivity extends Activity {
                     number.setSelection(number.length());
                     updating[0] = false;
                 }
+                tintSlider(seekBar, key, progress);
                 if (preview != null) preview.setTint(key, progress);
             }
 
@@ -539,6 +616,7 @@ public final class SettingsActivity extends Activity {
             public void onStopTrackingTouch(SeekBar seekBar) {
                 int value = seekBar.getProgress();
                 prefs.edit().putInt(key, value).commit();
+                tintSlider(seekBar, key, value);
                 if (preview != null) preview.setTint(key, value);
                 markDirty();
             }
